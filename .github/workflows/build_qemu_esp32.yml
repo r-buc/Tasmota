@@ -98,25 +98,21 @@ jobs:
         # boot so the firmware can run on the Espressif QEMU ESP32 machine,
         # which does not emulate the ESP32 WiFi hardware.
         run: platformio run -e tasmota32-qemu
-      - name: Collect QEMU binaries and create merged flash image
+      - name: Collect QEMU binaries and create flash image
         run: |
           BUILD_DIR=".pio/build/tasmota32-qemu"
           mkdir -p qemu_image
 
-          # PlatformIO's post_esp32.py already assembled a correct flash image
-          # (firmware.factory.bin) with the right partition layout:
+          # PlatformIO's post_esp32.py assembles firmware.factory.bin with the
+          # correct partition layout:
           #   0x1000  - bootloader
           #   0x8000  - partition table
-          #   0xe000  - boot_app0 (OTA data, selects factory partition on first boot)
-          #   0x10000 - safeboot firmware (factory app partition)
-          #   0xe0000 - main firmware (app0 partition; compiled to run from here)
+          #   0xe000  - boot_app0 (OTA data)
+          #   0x10000 - safeboot firmware (factory partition)
+          #   0xe0000 - main Tasmota firmware (app0 partition)
           #
-          # Placing firmware.bin at any other offset (e.g. 0x10000) causes an
-          # immediate SW_RESET loop because the ESP32 MMU maps the booted partition
-          # to a fixed virtual-address window and the XIP code pointers would be wrong.
-          #
-          # Pad the image to exactly 4 MB with 0xFF (erased-flash value) so that
-          # QEMU's MTD flash device gets the full 4 MB it expects.
+          # QEMU's MTD flash device only accepts images of exactly 2, 4, 8, or
+          # 16 MB.  Pad the factory image to 4 MB with 0xFF (erased-flash value).
           python3 - <<'PYEOF'
           import os, sys
           BUILD_DIR = ".pio/build/tasmota32-qemu"
@@ -128,17 +124,16 @@ jobs:
               sys.exit(1)
           with open(src, "rb") as f:
               data = f.read()
-          if len(data) < target:
-              data = data + b"\xff" * (target - len(data))
-          elif len(data) > target:
+          if len(data) > target:
               print(f"ERROR: factory image {len(data)} bytes exceeds 4 MB flash", file=sys.stderr)
               sys.exit(1)
           with open(dst, "wb") as f:
               f.write(data)
-          print(f"Flash image written: {len(data)} bytes ({len(data) // 1024} KB)")
+              f.write(b"\xff" * (target - len(data)))
+          print(f"Flash image: {target // (1024*1024)} MB ({target} bytes, padded from {len(data)} bytes)")
           PYEOF
 
-          echo "=== QEMU image contents ==="
+          echo "=== QEMU flash image ==="
           ls -lh qemu_image/
       - name: Install Espressif QEMU
         run: |
@@ -154,22 +149,23 @@ jobs:
           echo "/tmp/qemu/bin" >> "$GITHUB_PATH"
 
           /tmp/qemu/bin/qemu-system-xtensa --version
-      - name: Boot test in QEMU
+      - name: Boot and network test in QEMU
         run: |
-          echo "Starting Tasmota in QEMU (boot smoke test)..."
+          echo "Starting Tasmota in QEMU with user-mode networking..."
 
           # Run QEMU in the background.
-          # Neither WiFi nor the built-in ESP32 EMAC can be used here:
-          # - WiFi hardware is not emulated by the ESP32 QEMU machine.
-          # - QEMU's OpenCores Ethernet MAC is incompatible with the Synopsys
-          #   GMAC register layout used by the ESP-IDF EMAC driver; attempting
-          #   to initialise it causes a LoadStorePIFAddrError panic.
-          # The FIRMWARE_TASMOTA32_QEMU flag disables both, so we test boot
-          # stability only (no networking).
+          # -nographic         : headless – no graphical display
+          # -machine esp32     : Espressif ESP32 dual-core Xtensa LX6 machine
+          # -drive ...         : attach the factory flash image as MTD flash
+          # -nic user,...      : SLIRP user-mode networking routed through the
+          #                      OpenCores Ethernet MAC (open_eth).
+          #                      hostfwd forwards host TCP:18080 → guest TCP:80
+          # -serial file       : capture UART0 for log analysis
           qemu-system-xtensa \
             -nographic \
             -machine esp32 \
             -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
+            -nic user,model=open_eth,hostfwd=tcp::18080-:80 \
             -serial file:qemu_serial.log \
             -monitor null \
             2>/dev/null &
@@ -196,29 +192,64 @@ jobs:
           fi
           echo "✓ Boot PASSED – Tasmota reached main init"
 
-          # --- Step 2: confirm no crash loop in the next 20 s ---
-          # A crash loop prints "rst:0xc (SW_CPU_RESET)" repeatedly.
-          # Count occurrences before and after a 20 s wait.
-          # Use `; true` so the subshell always exits 0 (grep -c exits 1 for
-          # zero matches but still prints "0", so `|| echo 0` would print "0\n0").
-          REBOOTS_AT_BOOT=$(grep -c "rst:0xc" qemu_serial.log 2>/dev/null; true)
-          REBOOTS_AT_BOOT="${REBOOTS_AT_BOOT:-0}"
-          sleep 20
-          REBOOTS_AFTER=$(grep -c "rst:0xc" qemu_serial.log 2>/dev/null; true)
-          REBOOTS_AFTER="${REBOOTS_AFTER:-0}"
+          # --- Step 2: wait for Ethernet to get an IP address (up to 60 s) ---
+          # Tasmota logs "ETH: Connected" when the link comes up and
+          # "ETH: IPv4" / "ETH: Got IP" when DHCP assigns an address.
+          echo "Waiting for Ethernet IP address..."
+          TIMEOUT=60
+          ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial.log 2>/dev/null; then
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
 
-          kill "$QEMU_PID" 2>/dev/null || true
-
-          if [ "$REBOOTS_AFTER" -gt "$REBOOTS_AT_BOOT" ]; then
-            echo "✗ Stability test FAILED – firmware crashed after boot ($REBOOTS_AFTER SW_CPU_RESETs)"
+          if ! grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial.log 2>/dev/null; then
+            echo "✗ Network test FAILED – Ethernet did not come up after ${TIMEOUT}s"
+            kill "$QEMU_PID" 2>/dev/null || true
             cat qemu_serial.log || true
             exit 1
           fi
-          echo "✓ Stability PASSED – no crash loop after boot"
+          echo "✓ Ethernet is up"
+
+          # Give the web server a moment to start accepting connections.
+          sleep 5
+
+          # --- Step 3: HTTP reachability – run Status 0 command via HTTP ---
+          echo "Testing HTTP reachability via Status 0 command..."
+          HTTP_CODE=$(curl -s \
+            --max-time 15 \
+            -o /tmp/status_response.json \
+            -w "%{http_code}" \
+            "http://localhost:18080/cm?cmnd=Status%200" || echo "000")
+
+          echo "HTTP response code: $HTTP_CODE"
+          echo "HTTP response body:"
+          cat /tmp/status_response.json || true
+          echo ""
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "✗ HTTP test FAILED – expected 200, got $HTTP_CODE"
+            kill "$QEMU_PID" 2>/dev/null || true
+            cat qemu_serial.log || true
+            exit 1
+          fi
+
+          if ! grep -q '"Status"' /tmp/status_response.json 2>/dev/null; then
+            echo "✗ HTTP test FAILED – response does not contain expected JSON key 'Status'"
+            kill "$QEMU_PID" 2>/dev/null || true
+            cat qemu_serial.log || true
+            exit 1
+          fi
+
+          echo "✓ HTTP test PASSED – Tasmota responded to Status 0 with HTTP 200"
+          kill "$QEMU_PID" 2>/dev/null || true
 
           echo ""
-          echo "--- QEMU serial output (last 40 lines) ---"
-          tail -40 qemu_serial.log || true
+          echo "--- QEMU serial output (last 60 lines) ---"
+          tail -60 qemu_serial.log || true
       - name: Zip QEMU image
         run: |
           cd qemu_image

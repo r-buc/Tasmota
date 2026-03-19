@@ -249,7 +249,7 @@ void EthernetInit(void) {
 #ifndef FIRMWARE_TASMOTA32_QEMU
 // In the QEMU build the GPIO template has no ETH pins configured, but QEMU
 // emulates the full EMAC + MII management interface.  Skip the early return
-// so the normal ETH.begin() path below can run with synthesised pin numbers.    
+// so the normal ETH.begin() path below can run with synthesised pin numbers.
     // Native ESP32
     if (!PinUsed(GPIO_ETH_PHY_MDC, GPIO_ANY) && !PinUsed(GPIO_ETH_PHY_MDIO)) {  // && should be || but keep for backward compatibility
 #ifndef FIRMWARE_MINIMAL

@@ -602,15 +602,16 @@ void setup(void) {
       Settings->flag4.network_wifi = 1;         // Make sure we're in control
     }
 #ifdef FIRMWARE_TASMOTA32_QEMU
-    // Neither WiFi nor the built-in Ethernet MAC can be used in the
-    // Espressif QEMU ESP32 machine:
-    // - WiFi hardware is not emulated.
-    // - QEMU maps an OpenCores Ethernet MAC at 0x3FF69000, but the ESP-IDF
-    //   EMAC driver uses the Synopsys GMAC register layout; accessing registers
-    //   beyond the OpenCores range causes a LoadStorePIFAddrError panic.
-    // Disable both so the firmware runs stably for boot-smoke testing.
+    // WiFi hardware is not emulated in the Espressif QEMU ESP32 machine.
+    // Disable WiFi and enable Ethernet instead.  QEMU's OpenCores Ethernet MAC
+    // is routed through the -Wl,--wrap=esp_eth_mac_new_esp32 trampoline which
+    // substitutes esp_eth_mac_new_openeth() for the Synopsys GMAC driver.
+    // QEMU emulates a DP83848C PHY at MII address 1.
     Settings->flag4.network_wifi = 0;
-    Settings->flag4.network_ethernet = 0;
+    Settings->flag4.network_ethernet = 1;
+    Settings->eth_type = 3;     // ETH_PHY_DP83848 – the PHY QEMU emulates
+    Settings->eth_address = 1;  // PHY address used by Espressif QEMU
+    Settings->eth_clk_mode = 0; // ETH_CLOCK_GPIO0_IN (irrelevant in QEMU)
 #endif  // FIRMWARE_TASMOTA32_QEMU
 #endif  // ESP32
   }
