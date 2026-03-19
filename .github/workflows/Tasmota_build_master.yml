@@ -243,6 +243,7 @@ jobs:
   Start_final_copy:
     needs: Release
     runs-on: ubuntu-latest
+    if: github.repository == 'arendst/Tasmota'
     env:
       GH_TOKEN: ${{ secrets.API_TOKEN_GITHUB }}
     steps:
