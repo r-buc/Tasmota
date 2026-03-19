@@ -109,20 +109,19 @@ jobs:
           # Gather the individual binaries needed for QEMU
           mkdir -p qemu_image
 
-          # Bootloader and boot_app0 come from the ESP-IDF/Arduino package;
-          # PlatformIO copies them into the build directory via FLASH_EXTRA_IMAGES.
-          # Retrieve the resolved paths from the environment.
-          BOOTLOADER=$(find ~/.platformio -name "bootloader_dout_40m.bin" 2>/dev/null | head -1)
+          # The bootloader is built by PlatformIO and placed directly in the
+          # build directory.  boot_app0 comes from the framework package.
+          BOOTLOADER="${BUILD_DIR}/bootloader.bin"
           BOOT_APP0=$(find ~/.platformio -name "boot_app0.bin" 2>/dev/null | head -1)
 
           cp "${BUILD_DIR}/partitions.bin"  qemu_image/partitions.bin
           cp "${BUILD_DIR}/firmware.bin"    qemu_image/tasmota32.bin
 
-          if [ -n "$BOOTLOADER" ]; then
+          if [ -f "$BOOTLOADER" ]; then
             cp "$BOOTLOADER" qemu_image/bootloader.bin
           fi
 
-          if [ -n "$BOOT_APP0" ]; then
+          if [ -f "$BOOT_APP0" ]; then
             cp "$BOOT_APP0" qemu_image/boot_app0.bin
           fi
 
@@ -133,18 +132,18 @@ jobs:
           #   0xe000  - boot_app0
           #   0x10000 - application firmware
           MERGE_ARGS=""
-          if [ -n "$BOOTLOADER" ]; then
+          if [ -f "$BOOTLOADER" ]; then
             MERGE_ARGS="$MERGE_ARGS 0x1000 $BOOTLOADER"
           fi
           MERGE_ARGS="$MERGE_ARGS 0x8000 ${BUILD_DIR}/partitions.bin"
-          if [ -n "$BOOT_APP0" ]; then
+          if [ -f "$BOOT_APP0" ]; then
             MERGE_ARGS="$MERGE_ARGS 0xe000 $BOOT_APP0"
           fi
           MERGE_ARGS="$MERGE_ARGS 0x10000 ${BUILD_DIR}/firmware.bin"
 
-          esptool.py --chip esp32 merge_bin \
+          esptool --chip esp32 merge-bin \
             --output qemu_image/tasmota32-qemu-flash.bin \
-            --fill-flash-size 4MB \
+            --pad-to-size 4MB \
             --flash-mode dout \
             --flash-freq 40m \
             --flash-size 4MB \
@@ -185,6 +184,7 @@ jobs:
             -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
             -nic user,model=open_eth,hostfwd=tcp::18080-:80 \
             -serial file:qemu_serial.log \
+            -monitor null \
             2>/dev/null &
           QEMU_PID=$!
           echo "QEMU PID: $QEMU_PID"
