@@ -1,0 +1,150 @@
+name: Build_QEMU_ESP32
+
+on:
+  workflow_dispatch:      # Start a workflow manually
+  push:
+    branches: master
+    paths-ignore:
+    - '.github/**'        # Ignore changes towards the .github directory
+    - '**.md'             # Do not build if *.md files change
+    - 'tasmota/berry/**'  # Ignore Berry examples
+
+# Ensures that only one deploy task per branch/environment will run at a time.
+concurrency:
+  group: qemu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safeboot:
+    runs-on: ubuntu-latest
+    if: github.repository == 'r-buc/Tasmota'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: false
+      - name: Install dependencies
+        run: |
+          uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+          cp ./platformio_override_sample.ini ./platformio_override.ini
+      - name: Run PlatformIO (safeboot)
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: '1'
+        run: platformio run -e tasmota32-safeboot
+      - name: Upload safeboot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tasmota32-safeboot
+          path: ./build_output
+
+  build-qemu-image:
+    needs: safeboot
+    runs-on: ubuntu-latest
+    if: github.repository == 'r-buc/Tasmota'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: false
+      - name: Install dependencies
+        run: |
+          uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+          cp ./platformio_override_sample.ini ./platformio_override.ini
+      - name: Download safeboot firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: tasmota32-safeboot
+          path: ./temp
+      - name: Move safeboot files into place
+        run: |
+          mkdir -p ./firmware/firmware
+          find ./temp -type f -exec cp -t ./firmware/firmware {} +
+      - name: Run PlatformIO (tasmota32)
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: '1'
+        run: platformio run -e tasmota32
+      - name: Collect QEMU binaries and create merged flash image
+        run: |
+          # Install esptool for merge_bin
+          uv pip install --system esptool
+
+          # Locate build artifacts produced by PlatformIO
+          BUILD_DIR=".pio/build/tasmota32"
+
+          # Gather the individual binaries needed for QEMU
+          mkdir -p qemu_image
+
+          # Bootloader and boot_app0 come from the ESP-IDF/Arduino package;
+          # PlatformIO copies them into the build directory via FLASH_EXTRA_IMAGES.
+          # Retrieve the resolved paths from the environment.
+          BOOTLOADER=$(find ~/.platformio -name "bootloader_dout_40m.bin" 2>/dev/null | head -1)
+          BOOT_APP0=$(find ~/.platformio -name "boot_app0.bin" 2>/dev/null | head -1)
+
+          cp "${BUILD_DIR}/partitions.bin"  qemu_image/partitions.bin
+          cp "${BUILD_DIR}/firmware.bin"    qemu_image/tasmota32.bin
+
+          if [ -n "$BOOTLOADER" ]; then
+            cp "$BOOTLOADER" qemu_image/bootloader.bin
+          fi
+
+          if [ -n "$BOOT_APP0" ]; then
+            cp "$BOOT_APP0" qemu_image/boot_app0.bin
+          fi
+
+          # Build the merged raw flash image that QEMU can boot directly.
+          # Layout (standard ESP32 4 MB flash):
+          #   0x1000  - bootloader
+          #   0x8000  - partition table
+          #   0xe000  - boot_app0
+          #   0x10000 - application firmware
+          MERGE_ARGS=""
+          if [ -n "$BOOTLOADER" ]; then
+            MERGE_ARGS="$MERGE_ARGS 0x1000 $BOOTLOADER"
+          fi
+          MERGE_ARGS="$MERGE_ARGS 0x8000 ${BUILD_DIR}/partitions.bin"
+          if [ -n "$BOOT_APP0" ]; then
+            MERGE_ARGS="$MERGE_ARGS 0xe000 $BOOT_APP0"
+          fi
+          MERGE_ARGS="$MERGE_ARGS 0x10000 ${BUILD_DIR}/firmware.bin"
+
+          esptool.py --chip esp32 merge_bin \
+            --output qemu_image/tasmota32-qemu-flash.bin \
+            --fill-flash-size 4MB \
+            --flash-mode dout \
+            --flash-freq 40m \
+            --flash-size 4MB \
+            $MERGE_ARGS
+
+          echo "=== QEMU image contents ==="
+          ls -lh qemu_image/
+      - name: Zip QEMU image
+        run: |
+          cd qemu_image
+          zip ../tasmota-qemu-esp32-image.zip ./*
+      - name: Upload QEMU image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tasmota-qemu-esp32-image
+          path: tasmota-qemu-esp32-image.zip
