@@ -118,25 +118,25 @@ jobs:
           # Pad the image to exactly 4 MB with 0xFF (erased-flash value) so that
           # QEMU's MTD flash device gets the full 4 MB it expects.
           python3 - <<'PYEOF'
-import os, sys
-BUILD_DIR = ".pio/build/tasmota32-qemu"
-src = f"{BUILD_DIR}/firmware.factory.bin"
-dst = "qemu_image/tasmota32-qemu-flash.bin"
-target = 4 * 1024 * 1024
-if not os.path.exists(src):
-    print(f"ERROR: {src} not found", file=sys.stderr)
-    sys.exit(1)
-with open(src, "rb") as f:
-    data = f.read()
-if len(data) < target:
-    data = data + b"\xff" * (target - len(data))
-elif len(data) > target:
-    print(f"ERROR: factory image {len(data)} bytes exceeds 4 MB flash", file=sys.stderr)
-    sys.exit(1)
-with open(dst, "wb") as f:
-    f.write(data)
-print(f"Flash image written: {len(data)} bytes ({len(data) // 1024} KB)")
-PYEOF
+          import os, sys
+          BUILD_DIR = ".pio/build/tasmota32-qemu"
+          src = f"{BUILD_DIR}/firmware.factory.bin"
+          dst = "qemu_image/tasmota32-qemu-flash.bin"
+          target = 4 * 1024 * 1024
+          if not os.path.exists(src):
+              print(f"ERROR: {src} not found", file=sys.stderr)
+              sys.exit(1)
+          with open(src, "rb") as f:
+              data = f.read()
+          if len(data) < target:
+              data = data + b"\xff" * (target - len(data))
+          elif len(data) > target:
+              print(f"ERROR: factory image {len(data)} bytes exceeds 4 MB flash", file=sys.stderr)
+              sys.exit(1)
+          with open(dst, "wb") as f:
+              f.write(data)
+          print(f"Flash image written: {len(data)} bytes ({len(data) // 1024} KB)")
+          PYEOF
 
           echo "=== QEMU image contents ==="
           ls -lh qemu_image/
