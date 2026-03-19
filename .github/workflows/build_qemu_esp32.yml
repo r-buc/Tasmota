@@ -5,13 +5,13 @@ on:
   push:
     branches: master
     paths-ignore:
-    - '.github/**'        # Ignore changes towards the .github directory
+    #- '.github/**'        # Ignore changes towards the .github directory
     - '**.md'             # Do not build if *.md files change
     - 'tasmota/berry/**'  # Ignore Berry examples
   pull_request:
     branches: master
     paths-ignore:
-    - '.github/**'
+    #- '.github/**'
     - '**.md'
     - 'tasmota/berry/**'
 
