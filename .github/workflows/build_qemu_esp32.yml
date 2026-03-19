@@ -165,7 +165,7 @@ jobs:
           tar -xf /tmp/qemu-esp32.tar.xz -C /tmp
           echo "/tmp/qemu/bin" >> "$GITHUB_PATH"
 
-          qemu-system-xtensa --version
+          /tmp/qemu/bin/qemu-system-xtensa --version
       - name: Boot and network test in QEMU
         run: |
           echo "Starting Tasmota in QEMU with user-mode networking..."
