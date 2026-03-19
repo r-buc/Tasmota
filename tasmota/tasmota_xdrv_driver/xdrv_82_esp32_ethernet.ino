@@ -248,10 +248,15 @@ void EthernetInit(void) {
   } else {
     // Native ESP32
     if (!PinUsed(GPIO_ETH_PHY_MDC, GPIO_ANY) && !PinUsed(GPIO_ETH_PHY_MDIO)) {  // && should be || but keep for backward compatibility
+#ifndef FIRMWARE_TASMOTA32_QEMU
+// In the QEMU build the GPIO template has no ETH pins configured, but QEMU
+// emulates the full EMAC + MII management interface.  Skip the early return
+// so the normal ETH.begin() path below can run with synthesised pin numbers.
 #ifndef FIRMWARE_MINIMAL
       AddLog(LOG_LEVEL_DEBUG_MORE, PSTR(D_LOG_ETH "No ETH MDC and ETH MDIO GPIO defined"));
 #endif // FIRMWARE_MINIMAL
       return;
+#endif  // FIRMWARE_TASMOTA32_QEMU
     }
   }
 
@@ -266,6 +271,17 @@ void EthernetInit(void) {
   uint32_t spi_bus = GetPin(eth_mdc) - AGPIO(GPIO_ETH_PHY_MDC); // 0 or 1
   int eth_mdio = Pin(GPIO_ETH_PHY_MDIO);          // Ethernet SPI IRQ
   int eth_power = Pin(GPIO_ETH_PHY_POWER);        // Ethernet SPI RST
+
+#ifdef FIRMWARE_TASMOTA32_QEMU
+  // QEMU emulates the full EMAC hardware including the MII management
+  // interface (MDC/MDIO).  The Arduino ETH driver still needs valid GPIO
+  // numbers to set up its internal state, but no real GPIO activity
+  // occurs.  Use the standard RMII reference board assignments.
+  #define QEMU_ETH_MDC_PIN   23
+  #define QEMU_ETH_MDIO_PIN  18
+  if (eth_mdc  < 0) { eth_mdc  = QEMU_ETH_MDC_PIN; }
+  if (eth_mdio < 0) { eth_mdio = QEMU_ETH_MDIO_PIN; }
+#endif  // FIRMWARE_TASMOTA32_QEMU
 
 #ifdef USE_IPV6
   ETH.enableIPv6();   // enable Link-Local
