@@ -100,54 +100,43 @@ jobs:
         run: platformio run -e tasmota32-qemu
       - name: Collect QEMU binaries and create merged flash image
         run: |
-          # Install esptool for merge_bin
-          uv pip install --system esptool
-
-          # Locate build artifacts produced by PlatformIO
           BUILD_DIR=".pio/build/tasmota32-qemu"
-
-          # Gather the individual binaries needed for QEMU
           mkdir -p qemu_image
 
-          # The bootloader is built by PlatformIO and placed directly in the
-          # build directory.  boot_app0 comes from the framework package.
-          BOOTLOADER="${BUILD_DIR}/bootloader.bin"
-          BOOT_APP0=$(find ~/.platformio -name "boot_app0.bin" 2>/dev/null | head -1)
-
-          cp "${BUILD_DIR}/partitions.bin"  qemu_image/partitions.bin
-          cp "${BUILD_DIR}/firmware.bin"    qemu_image/tasmota32.bin
-
-          if [ -f "$BOOTLOADER" ]; then
-            cp "$BOOTLOADER" qemu_image/bootloader.bin
-          fi
-
-          if [ -f "$BOOT_APP0" ]; then
-            cp "$BOOT_APP0" qemu_image/boot_app0.bin
-          fi
-
-          # Build the merged raw flash image that QEMU can boot directly.
-          # Layout (standard ESP32 4 MB flash):
+          # PlatformIO's post_esp32.py already assembled a correct flash image
+          # (firmware.factory.bin) with the right partition layout:
           #   0x1000  - bootloader
           #   0x8000  - partition table
-          #   0xe000  - boot_app0
-          #   0x10000 - application firmware
-          MERGE_ARGS=""
-          if [ -f "$BOOTLOADER" ]; then
-            MERGE_ARGS="$MERGE_ARGS 0x1000 $BOOTLOADER"
-          fi
-          MERGE_ARGS="$MERGE_ARGS 0x8000 ${BUILD_DIR}/partitions.bin"
-          if [ -f "$BOOT_APP0" ]; then
-            MERGE_ARGS="$MERGE_ARGS 0xe000 $BOOT_APP0"
-          fi
-          MERGE_ARGS="$MERGE_ARGS 0x10000 ${BUILD_DIR}/firmware.bin"
-
-          esptool --chip esp32 merge-bin \
-            --output qemu_image/tasmota32-qemu-flash.bin \
-            --pad-to-size 4MB \
-            --flash-mode dout \
-            --flash-freq 40m \
-            --flash-size 4MB \
-            $MERGE_ARGS
+          #   0xe000  - boot_app0 (OTA data, selects factory partition on first boot)
+          #   0x10000 - safeboot firmware (factory app partition)
+          #   0xe0000 - main firmware (app0 partition; compiled to run from here)
+          #
+          # Placing firmware.bin at any other offset (e.g. 0x10000) causes an
+          # immediate SW_RESET loop because the ESP32 MMU maps the booted partition
+          # to a fixed virtual-address window and the XIP code pointers would be wrong.
+          #
+          # Pad the image to exactly 4 MB with 0xFF (erased-flash value) so that
+          # QEMU's MTD flash device gets the full 4 MB it expects.
+          python3 - <<'PYEOF'
+import os, sys
+BUILD_DIR = ".pio/build/tasmota32-qemu"
+src = f"{BUILD_DIR}/firmware.factory.bin"
+dst = "qemu_image/tasmota32-qemu-flash.bin"
+target = 4 * 1024 * 1024
+if not os.path.exists(src):
+    print(f"ERROR: {src} not found", file=sys.stderr)
+    sys.exit(1)
+with open(src, "rb") as f:
+    data = f.read()
+if len(data) < target:
+    data = data + b"\xff" * (target - len(data))
+elif len(data) > target:
+    print(f"ERROR: factory image {len(data)} bytes exceeds 4 MB flash", file=sys.stderr)
+    sys.exit(1)
+with open(dst, "wb") as f:
+    f.write(data)
+print(f"Flash image written: {len(data)} bytes ({len(data) // 1024} KB)")
+PYEOF
 
           echo "=== QEMU image contents ==="
           ls -lh qemu_image/
