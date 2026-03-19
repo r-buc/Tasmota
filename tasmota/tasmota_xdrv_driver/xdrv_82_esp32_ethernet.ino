@@ -256,8 +256,8 @@ void EthernetInit(void) {
       AddLog(LOG_LEVEL_DEBUG_MORE, PSTR(D_LOG_ETH "No ETH MDC and ETH MDIO GPIO defined"));
 #endif // FIRMWARE_MINIMAL
       return;
-#endif  // FIRMWARE_TASMOTA32_QEMU
     }
+#endif  // FIRMWARE_TASMOTA32_QEMU
   }
 
   eth_config_change = 0;
