@@ -164,34 +164,110 @@ jobs:
           echo "/tmp/qemu/bin" >> "$GITHUB_PATH"
 
           qemu-system-xtensa --version
-      - name: Boot test in QEMU
+      - name: Boot and network test in QEMU
         run: |
-          echo "Starting Tasmota in QEMU (30 s timeout)..."
+          echo "Starting Tasmota in QEMU with user-mode networking..."
 
-          # Run QEMU in the background; serial output (UART0) goes to a log file.
-          # -nographic   : headless – no graphical display
-          # -machine esp32 : Espressif ESP32 dual-core Xtensa LX6 machine
-          # -drive ...   : attach the 4 MB raw flash image as MTD flash
-          # -serial file : capture UART0 output for analysis
-          timeout 30 qemu-system-xtensa \
+          # Run QEMU in the background.
+          # -nographic         : headless – no graphical display
+          # -machine esp32     : Espressif ESP32 dual-core Xtensa LX6 machine
+          # -drive ...         : attach the 4 MB raw flash image as MTD flash
+          # -nic user,...      : SLIRP user-mode networking using the OpenCores
+          #                      Ethernet MAC (open_eth), which the ESP32 EMAC
+          #                      driver talks to via QEMU emulation.
+          #                      hostfwd forwards host TCP:18080 → guest TCP:80
+          # -serial file       : capture UART0 for log analysis
+          qemu-system-xtensa \
             -nographic \
             -machine esp32 \
             -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
+            -nic user,model=open_eth,hostfwd=tcp::18080-:80 \
             -serial file:qemu_serial.log \
-            2>/dev/null || true
+            2>/dev/null &
+          QEMU_PID=$!
+          echo "QEMU PID: $QEMU_PID"
 
-          echo "--- QEMU serial output ---"
-          cat qemu_serial.log || true
+          # --- Step 1: wait for Tasmota to complete setup() (up to 60 s) ---
+          echo "Waiting for Tasmota to reach main init..."
+          TIMEOUT=60
+          ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if grep -q "Project tasmota" qemu_serial.log 2>/dev/null; then
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
 
-          # Verify that Tasmota's startup log reached the post-init log line.
-          # "Project tasmota" is printed by tasmota.ino right after WifiConnect()
-          # returns, confirming that setup() ran to completion.
-          if grep -q "Project tasmota" qemu_serial.log; then
-            echo "✓ QEMU boot test PASSED – Tasmota reached main init"
-          else
-            echo "✗ QEMU boot test FAILED – expected 'Project tasmota' not found in serial log"
+          if ! grep -q "Project tasmota" qemu_serial.log 2>/dev/null; then
+            echo "✗ Boot test FAILED – 'Project tasmota' not found after ${TIMEOUT}s"
+            kill "$QEMU_PID" 2>/dev/null || true
+            cat qemu_serial.log || true
             exit 1
           fi
+          echo "✓ Boot test PASSED – Tasmota reached main init"
+
+          # --- Step 2: wait for Ethernet to get an IP address (up to 60 s) ---
+          # Tasmota logs "ETH: Connected" when the link comes up and
+          # "ETH: Got IP" / "ETH: IPv4" when DHCP assigns an address.
+          echo "Waiting for Ethernet IP address..."
+          TIMEOUT=60
+          ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial.log 2>/dev/null; then
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
+
+          if ! grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial.log 2>/dev/null; then
+            echo "✗ Network test FAILED – Ethernet did not come up after ${TIMEOUT}s"
+            kill "$QEMU_PID" 2>/dev/null || true
+            cat qemu_serial.log || true
+            exit 1
+          fi
+          echo "✓ Ethernet is up"
+
+          # Give the web server a moment to start accepting connections.
+          sleep 5
+
+          # --- Step 3: HTTP reachability – run Status 0 command via HTTP ---
+          # The Tasmota web command interface accepts:
+          #   GET /cm?cmnd=Status%200
+          # and returns a JSON object whose top-level key is "Status".
+          echo "Testing HTTP reachability via Status 0 command..."
+          HTTP_CODE=$(curl -s \
+            --max-time 15 \
+            -o /tmp/status_response.json \
+            -w "%{http_code}" \
+            "http://localhost:18080/cm?cmnd=Status%200" || echo "000")
+
+          echo "HTTP response code: $HTTP_CODE"
+          echo "HTTP response body:"
+          cat /tmp/status_response.json || true
+          echo ""
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "✗ HTTP test FAILED – expected 200, got $HTTP_CODE"
+            kill "$QEMU_PID" 2>/dev/null || true
+            cat qemu_serial.log || true
+            exit 1
+          fi
+
+          if ! grep -q '"Status"' /tmp/status_response.json 2>/dev/null; then
+            echo "✗ HTTP test FAILED – response does not contain expected JSON key 'Status'"
+            kill "$QEMU_PID" 2>/dev/null || true
+            cat qemu_serial.log || true
+            exit 1
+          fi
+
+          echo "✓ HTTP test PASSED – Tasmota responded to Status 0 with HTTP 200"
+          kill "$QEMU_PID" 2>/dev/null || true
+
+          echo ""
+          echo "--- QEMU serial output (last 60 lines) ---"
+          tail -60 qemu_serial.log || true
       - name: Zip QEMU image
         run: |
           cd qemu_image

@@ -60,16 +60,26 @@ echo "Booting Tasmota ESP32 in QEMU..."
 echo "  Flash image : $FLASH_IMAGE"
 echo "  QEMU binary : $QEMU_BINARY"
 echo ""
+echo "The tasmota32-qemu firmware uses the ESP32 built-in EMAC for networking."
+echo "QEMU's open_eth model emulates this MAC and routes it through SLIRP"
+echo "(user-mode networking).  Add networking with:"
+echo "  -nic user,model=open_eth,hostfwd=tcp::18080-:80"
+echo "then query Tasmota via HTTP:"
+echo "  curl http://localhost:18080/cm?cmnd=Status%200"
+echo ""
 echo "Serial output will appear below. Press Ctrl-A X to quit QEMU."
 echo "--------------------------------------------------------------"
 
 # -nographic     : disable graphical output; use the terminal for serial I/O
 # -machine esp32 : select the ESP32 machine model (Xtensa LX6 dual-core)
 # -drive ...     : attach the merged flash image as an MTD flash device
+# -nic user,...  : SLIRP user-mode networking via OpenCores Ethernet (open_eth);
+#                  host port 18080 is forwarded to guest port 80 (Tasmota web UI)
 # -serial mon:stdio : route UART0 (console) to stdout and open the QEMU monitor
 "${QEMU_BINARY}" \
   -nographic \
   -machine esp32 \
   -drive "file=${FLASH_IMAGE},if=mtd,format=raw" \
+  -nic user,model=open_eth,hostfwd=tcp::18080-:80 \
   -serial mon:stdio
 
