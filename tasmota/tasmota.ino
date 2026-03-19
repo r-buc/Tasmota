@@ -601,6 +601,12 @@ void setup(void) {
     if (!Settings->flag4.network_ethernet) {
       Settings->flag4.network_wifi = 1;         // Make sure we're in control
     }
+#ifdef FIRMWARE_TASMOTA32_QEMU
+    // WiFi hardware is not emulated by the Espressif QEMU ESP32 machine.
+    // Force it off so WifiConnect() returns immediately and the firmware can
+    // boot to the main loop for automated boot-smoke testing.
+    Settings->flag4.network_wifi = 0;
+#endif  // FIRMWARE_TASMOTA32_QEMU
 #endif  // ESP32
   }
 

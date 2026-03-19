@@ -14,6 +14,13 @@ concurrency:
   group: qemu-${{ github.ref }}
   cancel-in-progress: true
 
+# Espressif QEMU release used for the boot-smoke test.
+# Binary asset naming: qemu-xtensa-softmmu-<VERSION_UNDERSCORED>-x86_64-linux-gnu.tar.xz
+# Requires glibc >= 2.31; ubuntu-latest (24.04) ships glibc 2.39.
+env:
+  QEMU_RELEASE: esp-develop-9.2.2-20250228
+  QEMU_VERSION: esp_develop_9.2.2_20250228
+
 jobs:
   safeboot:
     runs-on: ubuntu-latest
@@ -80,18 +87,22 @@ jobs:
         run: |
           mkdir -p ./firmware/firmware
           find ./temp -type f -exec cp -t ./firmware/firmware {} +
-      - name: Run PlatformIO (tasmota32)
+      - name: Run PlatformIO (tasmota32-qemu)
         env:
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: '1'
-        run: platformio run -e tasmota32
+        # tasmota32-qemu is a QEMU-compatible variant of tasmota32.
+        # It sets -DFIRMWARE_TASMOTA32_QEMU which disables WiFi init at
+        # boot so the firmware can run on the Espressif QEMU ESP32 machine,
+        # which does not emulate the ESP32 WiFi hardware.
+        run: platformio run -e tasmota32-qemu
       - name: Collect QEMU binaries and create merged flash image
         run: |
           # Install esptool for merge_bin
           uv pip install --system esptool
 
           # Locate build artifacts produced by PlatformIO
-          BUILD_DIR=".pio/build/tasmota32"
+          BUILD_DIR=".pio/build/tasmota32-qemu"
 
           # Gather the individual binaries needed for QEMU
           mkdir -p qemu_image
@@ -139,6 +150,48 @@ jobs:
 
           echo "=== QEMU image contents ==="
           ls -lh qemu_image/
+      - name: Install Espressif QEMU
+        run: |
+          # Install runtime libraries required by the Espressif QEMU binary.
+          sudo apt-get install -y --no-install-recommends \
+            libglib2.0-0 libpixman-1-0 libsdl2-2.0-0 libslirp0
+
+          # Download the pre-built xtensa-softmmu binary from the official
+          # Espressif QEMU release.  The archive extracts to qemu/bin/qemu-system-xtensa.
+          curl -L -o /tmp/qemu-esp32.tar.xz \
+            "https://github.com/espressif/qemu/releases/download/${{ env.QEMU_RELEASE }}/qemu-xtensa-softmmu-${{ env.QEMU_VERSION }}-x86_64-linux-gnu.tar.xz"
+          tar -xf /tmp/qemu-esp32.tar.xz -C /tmp
+          echo "/tmp/qemu/bin" >> "$GITHUB_PATH"
+
+          qemu-system-xtensa --version
+      - name: Boot test in QEMU
+        run: |
+          echo "Starting Tasmota in QEMU (30 s timeout)..."
+
+          # Run QEMU in the background; serial output (UART0) goes to a log file.
+          # -nographic   : headless – no graphical display
+          # -machine esp32 : Espressif ESP32 dual-core Xtensa LX6 machine
+          # -drive ...   : attach the 4 MB raw flash image as MTD flash
+          # -serial file : capture UART0 output for analysis
+          timeout 30 qemu-system-xtensa \
+            -nographic \
+            -machine esp32 \
+            -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
+            -serial file:qemu_serial.log \
+            2>/dev/null || true
+
+          echo "--- QEMU serial output ---"
+          cat qemu_serial.log || true
+
+          # Verify that Tasmota's startup log reached the post-init log line.
+          # "Project tasmota" is printed by tasmota.ino right after WifiConnect()
+          # returns, confirming that setup() ran to completion.
+          if grep -q "Project tasmota" qemu_serial.log; then
+            echo "✓ QEMU boot test PASSED – Tasmota reached main init"
+          else
+            echo "✗ QEMU boot test FAILED – expected 'Project tasmota' not found in serial log"
+            exit 1
+          fi
       - name: Zip QEMU image
         run: |
           cd qemu_image
@@ -148,3 +201,4 @@ jobs:
         with:
           name: tasmota-qemu-esp32-image
           path: tasmota-qemu-esp32-image.zip
+

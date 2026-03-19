@@ -3,28 +3,41 @@
 #
 # Boot a Tasmota ESP32 firmware image inside Espressif's QEMU fork.
 #
+# Use the QEMU-compatible firmware variant built with the tasmota32-qemu
+# PlatformIO environment (-DFIRMWARE_TASMOTA32_QEMU).  This variant disables
+# WiFi initialisation at startup because the Espressif QEMU ESP32 machine does
+# not emulate the ESP32 WiFi hardware.
+#
+# The merged flash image (tasmota32-qemu-flash.bin) is produced by the
+# build_qemu_esp32.yml GitHub Actions workflow and uploaded as the
+# tasmota-qemu-esp32-image artifact.
+#
 # ---------------------------------------------------------------------------
 # Prerequisites – install Espressif's QEMU fork
 # ---------------------------------------------------------------------------
 # Espressif maintains an official QEMU fork with ESP32 support at:
 #   https://github.com/espressif/qemu
 #
-# Quick-install on Ubuntu/Debian:
+# Quick-install from a pre-built release binary (Ubuntu/Debian, x86-64):
+#   sudo apt-get install -y libglib2.0-0 libpixman-1-0 libsdl2-2.0-0 libslirp0
+#   RELEASE=esp-develop-9.2.2-20250228
+#   VERSION=esp_develop_9.2.2_20250228
+#   curl -L -o /tmp/qemu-esp32.tar.xz \
+#     "https://github.com/espressif/qemu/releases/download/${RELEASE}/qemu-xtensa-softmmu-${VERSION}-x86_64-linux-gnu.tar.xz"
+#   tar -xf /tmp/qemu-esp32.tar.xz -C /opt
+#   export PATH="/opt/qemu/bin:$PATH"
+#
+# Build from source (if a pre-built binary is not available for your platform):
 #   sudo apt-get install -y git ninja-build libglib2.0-dev libpixman-1-dev \
 #       libslirp-dev python3 python3-pip
 #   git clone --depth 1 --branch esp-develop \
-#       https://github.com/espressif/qemu.git /opt/qemu-esp32
-#   cd /opt/qemu-esp32
+#       https://github.com/espressif/qemu.git /opt/qemu-src
+#   cd /opt/qemu-src
 #   ./configure --target-list=xtensa-softmmu \
 #               --enable-slirp \
 #               --disable-werror
 #   make -j$(nproc)
-#   # The resulting binary is: /opt/qemu-esp32/build/qemu-system-xtensa
-#
-# Alternatively you can use the pre-built binaries distributed as part of
-# Espressif's IDF Docker image:
-#   docker pull espressif/idf
-#   # then run qemu-system-xtensa from within the container
+#   # The resulting binary is: /opt/qemu-src/build/qemu-system-xtensa
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -59,3 +72,4 @@ echo "--------------------------------------------------------------"
   -machine esp32 \
   -drive "file=${FLASH_IMAGE},if=mtd,format=raw" \
   -serial mon:stdio
+
