@@ -35,8 +35,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: master
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -69,8 +67,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: master
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
