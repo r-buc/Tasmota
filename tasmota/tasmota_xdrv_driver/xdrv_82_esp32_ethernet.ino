@@ -243,9 +243,7 @@ void EthernetInit(void) {
 #if CONFIG_ETH_USE_ESP32_EMAC
   if (WT32_ETH01 == TasmotaGlobal.module_type) {
     Settings->eth_address = 1;                    // EthAddress
-#ifndef FIRMWARE_TASMOTA32_QEMU
     Settings->eth_type = ETH_PHY_LAN8720;         // EthType 0 = LAN8720
-#endif  // FIRMWARE_TASMOTA32_QEMU
     Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
   }
 #endif  // CONFIG_ETH_USE_ESP32_EMAC

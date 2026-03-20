@@ -602,10 +602,7 @@ void setup(void) {
       Settings->flag4.network_wifi = 1;         // Make sure we're in control
     }
 #ifdef FIRMWARE_TASMOTA32_QEMU
-    // WiFi hardware is not emulated in the Espressif QEMU ESP32 machine.
-    // Disable WiFi and enable Ethernet with the DP83848C PHY that QEMU emulates.
-    Settings->flag4.network_wifi = 0;
-    Settings->flag4.network_ethernet = 1;
+    Settings->flag4.network_wifi = 0;            // WiFi hardware is not emulated in QEMU
 #endif  // FIRMWARE_TASMOTA32_QEMU
 #endif  // ESP32
   }

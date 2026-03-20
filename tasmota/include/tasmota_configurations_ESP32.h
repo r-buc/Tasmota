@@ -810,10 +810,13 @@
 
 /*********************************************************************************************\
  * [tasmota32-qemu]
- * QEMU-specific overrides: use WT32-ETH01 module (GPIO18=MDIO, GPIO23=MDC) and DP83848 PHY
+ * Use WT32-ETH01 module template so GPIO18=MDIO and GPIO23=MDC are pre-configured.
+ * (USE_WT32_ETH01 is set via build_flags in platformio_tasmota_env32.ini;
+ *  MODULE/FALLBACK_MODULE/ETH_TYPE/ETH_ADDRESS must be set here: MODULE because
+ *  tasmota_compat.h unconditionally #undefines it, ETH_TYPE/ETH_ADDRESS because
+ *  my_user_config.h unconditionally #defines them and overrides any -D build flags.)
 \*********************************************************************************************/
 #ifdef FIRMWARE_TASMOTA32_QEMU
-#define USE_WT32_ETH01                           // Enable WT32-ETH01 module support (required for MODULE below)
 #undef MODULE
 #define MODULE                 WT32_ETH01        // Module template with ETH GPIO pins: GPIO18=MDIO, GPIO23=MDC
 #undef FALLBACK_MODULE
