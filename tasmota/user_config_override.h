@@ -14,6 +14,15 @@
 #undef USE_BERRY_PARTITION_WIZARD
 #endif
 
+// QEMU-specific settings: WT32-ETH01 module with DP83848 PHY (emulated by Espressif QEMU)
+#ifdef FIRMWARE_TASMOTA32_QEMU
+#define USE_WT32_ETH01                           // Enable WT32-ETH01 support: GPIO18=ETH_MDIO, GPIO23=ETH_MDC
+#undef ETH_TYPE
+#define ETH_TYPE               3                 // ETH_PHY_DP83848 - PHY emulated by Espressif QEMU
+#undef ETH_ADDRESS
+#define ETH_ADDRESS            1                 // PHY address used by Espressif QEMU
+#endif  // FIRMWARE_TASMOTA32_QEMU
+
 // THIS SECTION IS USED TO REMOVE EVERYTHING LISTED FROM DEFAULT BINARY
 /*
 ooooo     ooo ooooo      ooo oooooooooo.   oooooooooooo oooooooooooo ooooo ooooo      ooo oooooooooooo                   .o.       ooooo        ooooo        

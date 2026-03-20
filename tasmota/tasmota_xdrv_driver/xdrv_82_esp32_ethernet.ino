@@ -143,12 +143,12 @@ uint8_t eth_config_change;
 // flag redirects ETH.begin()'s internal MAC creation call to
 // __wrap_esp_eth_mac_new_esp32 below, which calls esp_eth_mac_new_openeth()
 // from libesp_eth.a (compiled in via custom_sdkconfig = CONFIG_ETH_USE_OPENETH=y).
-#if defined(FIRMWARE_TASMOTA32_QEMU) && defined(CONFIG_ETH_USE_OPENETH)
+#ifdef FIRMWARE_TASMOTA32_QEMU
 #include <esp_eth_mac_openeth.h>
 extern "C" esp_eth_mac_t *__wrap_esp_eth_mac_new_esp32(const void*, const eth_mac_config_t *config) {
   return esp_eth_mac_new_openeth(config);
 }
-#endif  // FIRMWARE_TASMOTA32_QEMU && CONFIG_ETH_USE_OPENETH
+#endif  // FIRMWARE_TASMOTA32_QEMU
 
 extern esp_netif_t* get_esp_interface_netif(esp_interface_t interface);
 

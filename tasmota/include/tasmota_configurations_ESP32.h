@@ -811,20 +811,15 @@
 /*********************************************************************************************\
  * [tasmota32-qemu]
  * Use WT32-ETH01 module template so GPIO18=MDIO and GPIO23=MDC are pre-configured.
- * (USE_WT32_ETH01 is set via build_flags in platformio_tasmota_env32.ini;
- *  MODULE/FALLBACK_MODULE/ETH_TYPE/ETH_ADDRESS must be set here: MODULE because
- *  tasmota_compat.h unconditionally #undefines it, ETH_TYPE/ETH_ADDRESS because
- *  my_user_config.h unconditionally #defines them and overrides any -D build flags.)
+ * (USE_WT32_ETH01/ETH_TYPE/ETH_ADDRESS are set in user_config_override.h;
+ *  MODULE/FALLBACK_MODULE must be here because tasmota_compat.h undefines MODULE
+ *  and the FIRMWARE_TASMOTA32 block above resets it to WEMOS before we get here.)
 \*********************************************************************************************/
 #ifdef FIRMWARE_TASMOTA32_QEMU
 #undef MODULE
 #define MODULE                 WT32_ETH01        // Module template with ETH GPIO pins: GPIO18=MDIO, GPIO23=MDC
 #undef FALLBACK_MODULE
 #define FALLBACK_MODULE        WT32_ETH01
-#undef ETH_TYPE
-#define ETH_TYPE               3                 // ETH_PHY_DP83848 - PHY emulated by Espressif QEMU
-#undef ETH_ADDRESS
-#define ETH_ADDRESS            1                 // PHY address used by Espressif QEMU
 #endif // FIRMWARE_TASMOTA32_QEMU
 
 /*********************************************************************************************\
