@@ -139,6 +139,103 @@ const uint8_t eth_type_xtable[] = {
 char eth_hostname[sizeof(TasmotaGlobal.hostname)];
 uint8_t eth_config_change;
 
+/*********************************************************************************************\
+ * OpenCores Ethernet MAC - QEMU builds only
+ *
+ * QEMU emulates an OpenCores Ethernet MAC at the same register base and
+ * interrupt source as the real ESP32 EMAC.  The standard EMAC driver
+ * (esp_eth_mac_new_esp32) targets the Synopsys GMAC register layout, which
+ * differs from OpenCores and causes a LoadStorePIFAddrError panic.
+ *
+ * CONFIG_ETH_USE_OPENETH=y (set via custom_sdkconfig in the tasmota32-qemu
+ * PlatformIO env) makes the IDF rebuild include esp_eth_mac_new_openeth() in
+ * libesp_eth.a.  EthernetInitOpenCores() below calls it directly, bypassing
+ * ETH.begin() which always uses esp_eth_mac_new_esp32().
+\*********************************************************************************************/
+#if defined(FIRMWARE_TASMOTA32_QEMU) && defined(CONFIG_ETH_USE_OPENETH)
+#include <esp_eth_mac_openeth.h>
+#include <esp_eth_netif_glue.h>
+
+#define QEMU_OPENETH_RX_TASK_STACK  4096  // RX task stack size for OpenCores MAC
+#define QEMU_OPENETH_PHY_ADDR       1     // DP83848C PHY address in Espressif QEMU
+
+static esp_eth_handle_t qemu_eth_handle = nullptr;
+static esp_netif_t     *qemu_eth_netif  = nullptr;
+
+static void QemuEthEventHandler(void *arg, esp_event_base_t event_base,
+                                 int32_t event_id, void *event_data) {
+  if (event_base == IP_EVENT && event_id == IP_EVENT_ETH_GOT_IP) {
+    ip_event_got_ip_t *ev = (ip_event_got_ip_t *)event_data;
+    Settings->eth_ipv4_address[1] = ev->ip_info.gw.addr;
+    Settings->eth_ipv4_address[2] = ev->ip_info.netmask.addr;
+    TasmotaGlobal.rules_flag.eth_connected = 1;
+    TasmotaGlobal.global_state.eth_down = 0;
+    WiFiHelper::scrubDNS();
+    AddLog(LOG_LEVEL_DEBUG, PSTR("ETH: IPv4 %_I, mask %_I, gateway %_I"),
+           ev->ip_info.ip.addr, ev->ip_info.netmask.addr, ev->ip_info.gw.addr);
+  } else if (event_base == ETH_EVENT) {
+    if (event_id == ETHERNET_EVENT_CONNECTED) {
+      esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)event_data;
+      uint8_t mac_addr[6] = {0};
+      esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
+      AddLog(LOG_LEVEL_INFO, PSTR(D_LOG_ETH D_CONNECTED ", Mac %02X:%02X:%02X:%02X:%02X:%02X, Hostname %s"),
+             mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5],
+             eth_hostname);
+    } else if (event_id == ETHERNET_EVENT_DISCONNECTED) {
+      TasmotaGlobal.rules_flag.eth_disconnected = 1;
+      TasmotaGlobal.global_state.eth_down = 1;
+      AddLog(LOG_LEVEL_INFO, PSTR(D_LOG_ETH "Disconnected"));
+    }
+  }
+}
+
+static void EthernetInitOpenCores(void) {
+  Network.begin();  // Initialise the Arduino/lwIP networking stack
+
+  eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+  mac_config.rx_task_stack_size = QEMU_OPENETH_RX_TASK_STACK;
+  esp_eth_mac_t *mac = esp_eth_mac_new_openeth(&mac_config);
+  if (!mac) {
+    AddLog(LOG_LEVEL_ERROR, PSTR(D_LOG_ETH "openeth MAC init failed"));
+    return;
+  }
+
+  eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
+  phy_config.phy_addr = QEMU_OPENETH_PHY_ADDR;  // DP83848C PHY address in Espressif QEMU
+  phy_config.reset_gpio_num = -1;
+  esp_eth_phy_t *phy = esp_eth_phy_new_dp83848(&phy_config);
+  if (!phy) {
+    AddLog(LOG_LEVEL_ERROR, PSTR(D_LOG_ETH "DP83848 PHY init failed"));
+    return;
+  }
+
+  esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
+  if (esp_eth_driver_install(&eth_config, &qemu_eth_handle) != ESP_OK) {
+    AddLog(LOG_LEVEL_ERROR, PSTR(D_LOG_ETH "driver install failed"));
+    return;
+  }
+
+  esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_ETH();
+  qemu_eth_netif = esp_netif_new(&netif_cfg);
+  esp_eth_netif_glue_handle_t glue = esp_eth_new_netif_glue(qemu_eth_handle);
+  if (!glue) {
+    AddLog(LOG_LEVEL_ERROR, PSTR(D_LOG_ETH "netif glue init failed"));
+    return;
+  }
+  esp_netif_attach(qemu_eth_netif, glue);
+  esp_netif_set_hostname(qemu_eth_netif, eth_hostname);
+
+  esp_event_handler_instance_register(ETH_EVENT, ESP_EVENT_ANY_ID,
+                                       &QemuEthEventHandler, nullptr, nullptr);
+  esp_event_handler_instance_register(IP_EVENT, IP_EVENT_ETH_GOT_IP,
+                                       &QemuEthEventHandler, nullptr, nullptr);
+
+  if (esp_eth_start(qemu_eth_handle) != ESP_OK) {
+    AddLog(LOG_LEVEL_ERROR, PSTR(D_LOG_ETH "start failed"));
+  }
+}
+#endif  // FIRMWARE_TASMOTA32_QEMU && CONFIG_ETH_USE_OPENETH
+
 extern esp_netif_t* get_esp_interface_netif(esp_interface_t interface);
 
 void EthernetEvent(arduino_event_t *event);
@@ -265,23 +362,20 @@ void EthernetInit(void) {
   strlcpy(eth_hostname, TasmotaGlobal.hostname, sizeof(eth_hostname) -5);  // Make sure there is room for "-eth"
   strcat(eth_hostname, "-eth");
 
+#if defined(FIRMWARE_TASMOTA32_QEMU) && defined(CONFIG_ETH_USE_OPENETH)
+  // For QEMU builds, use the OpenCores MAC directly via the standard
+  // esp_eth_mac_new_openeth() API instead of ETH.begin() (which always
+  // calls esp_eth_mac_new_esp32 and crashes against the OpenCores registers).
+  EthernetInitOpenCores();
+  return;
+#endif  // FIRMWARE_TASMOTA32_QEMU && CONFIG_ETH_USE_OPENETH
+
   WiFi.onEvent(EthernetEvent);
 
   int eth_mdc = Pin(GPIO_ETH_PHY_MDC, GPIO_ANY);  // Ethernet SPI CS (chip select)
   uint32_t spi_bus = GetPin(eth_mdc) - AGPIO(GPIO_ETH_PHY_MDC); // 0 or 1
   int eth_mdio = Pin(GPIO_ETH_PHY_MDIO);          // Ethernet SPI IRQ
   int eth_power = Pin(GPIO_ETH_PHY_POWER);        // Ethernet SPI RST
-
-#ifdef FIRMWARE_TASMOTA32_QEMU
-  // QEMU emulates the full EMAC hardware including the MII management
-  // interface (MDC/MDIO).  The Arduino ETH driver still needs valid GPIO
-  // numbers to set up its internal state, but no real GPIO activity
-  // occurs.  Use the standard RMII reference board assignments.
-  #define QEMU_ETH_MDC_PIN   23
-  #define QEMU_ETH_MDIO_PIN  18
-  if (eth_mdc  < 0) { eth_mdc  = QEMU_ETH_MDC_PIN; }
-  if (eth_mdio < 0) { eth_mdio = QEMU_ETH_MDIO_PIN; }
-#endif  // FIRMWARE_TASMOTA32_QEMU
 
 #ifdef USE_IPV6
   ETH.enableIPv6();   // enable Link-Local
@@ -337,13 +431,34 @@ void EthernetInit(void) {
 }
 
 IPAddress EthernetLocalIP(void) {
+#if defined(FIRMWARE_TASMOTA32_QEMU) && defined(CONFIG_ETH_USE_OPENETH)
+  if (qemu_eth_netif) {
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(qemu_eth_netif, &ip_info) == ESP_OK) {
+      return IPAddress(ip_info.ip.addr);
+    }
+  }
+  return IPAddress();
+#else
   return ETH.localIP();
+#endif
 }
 
 // Check to see if we have any routable IP address
 // IPv4 has always priority
 // Copy the value of the IP if pointer provided (optional)
 bool EthernetGetIP(IPAddress *ip) {
+#if defined(FIRMWARE_TASMOTA32_QEMU) && defined(CONFIG_ETH_USE_OPENETH)
+  if (qemu_eth_netif) {
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(qemu_eth_netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
+      if (ip != nullptr) { *ip = IPAddress(ip_info.ip.addr); }
+      return true;
+    }
+  }
+  if (ip != nullptr) { *ip = IPAddress(); }
+  return false;
+#else
 #ifdef USE_IPV6
   if ((uint32_t)ETH.localIP() != 0) {
     if (ip != nullptr) { *ip = ETH.localIP(); }
@@ -361,6 +476,7 @@ bool EthernetGetIP(IPAddress *ip) {
   if (ip != nullptr) { *ip = ETH.localIP(); }
   return (uint32_t)ETH.localIP() != 0;
 #endif // USE_IPV6
+#endif // FIRMWARE_TASMOTA32_QEMU && CONFIG_ETH_USE_OPENETH
 }
 bool EthernetHasIP(void) {
   return EthernetGetIP(nullptr);
@@ -379,7 +495,20 @@ char* EthernetHostname(void) {
 }
 
 String EthernetMacAddress(void) {
+#if defined(FIRMWARE_TASMOTA32_QEMU) && defined(CONFIG_ETH_USE_OPENETH)
+  if (qemu_eth_handle) {
+    uint8_t mac[6] = {0};
+    if (esp_eth_ioctl(qemu_eth_handle, ETH_CMD_G_MAC_ADDR, mac) == ESP_OK) {
+      char buf[18];
+      snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
+               mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+      return String(buf);
+    }
+  }
+  return String();
+#else
   return ETH.macAddress();
+#endif
 }
 
 void EthernetConfigChange(void) {

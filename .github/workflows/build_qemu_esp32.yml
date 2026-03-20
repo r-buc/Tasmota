@@ -112,26 +112,17 @@ jobs:
           #   0xe0000 - main Tasmota firmware (app0 partition)
           #
           # QEMU's MTD flash device only accepts images of exactly 2, 4, 8, or
-          # 16 MB.  Pad the factory image to 4 MB with 0xFF (erased-flash value).
-          python3 - <<'PYEOF'
-          import os, sys
-          BUILD_DIR = ".pio/build/tasmota32-qemu"
-          src = f"{BUILD_DIR}/firmware.factory.bin"
-          dst = "qemu_image/tasmota32-qemu-flash.bin"
-          target = 4 * 1024 * 1024
-          if not os.path.exists(src):
-              print(f"ERROR: {src} not found", file=sys.stderr)
-              sys.exit(1)
-          with open(src, "rb") as f:
-              data = f.read()
-          if len(data) > target:
-              print(f"ERROR: factory image {len(data)} bytes exceeds 4 MB flash", file=sys.stderr)
-              sys.exit(1)
-          with open(dst, "wb") as f:
-              f.write(data)
-              f.write(b"\xff" * (target - len(data)))
-          print(f"Flash image: {target // (1024*1024)} MB ({target} bytes, padded from {len(data)} bytes)")
-          PYEOF
+          # 16 MB.  Use dd with conv=sync to pad the factory image to exactly 4 MB.
+          # Fail explicitly if the source already exceeds 4 MB (would be silently
+          # truncated by dd otherwise).
+          SRC="${BUILD_DIR}/firmware.factory.bin"
+          SIZE=$(stat -c%s "$SRC")
+          MAX=$((4 * 1024 * 1024))
+          if [ "$SIZE" -gt "$MAX" ]; then
+            echo "ERROR: firmware.factory.bin ($SIZE bytes) exceeds 4 MB flash limit"
+            exit 1
+          fi
+          dd if="$SRC" of="qemu_image/tasmota32-qemu-flash.bin" bs=4M count=1 conv=sync
 
           echo "=== QEMU flash image ==="
           ls -lh qemu_image/
