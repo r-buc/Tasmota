@@ -606,9 +606,6 @@ void setup(void) {
     // Disable WiFi and enable Ethernet with the DP83848C PHY that QEMU emulates.
     Settings->flag4.network_wifi = 0;
     Settings->flag4.network_ethernet = 1;
-    Settings->eth_type = 3;     // ETH_PHY_DP83848 – the PHY QEMU emulates
-    Settings->eth_address = 1;  // PHY address used by Espressif QEMU
-    Settings->eth_clk_mode = 0; // ETH_CLOCK_GPIO0_IN (irrelevant in QEMU)
 #endif  // FIRMWARE_TASMOTA32_QEMU
 #endif  // ESP32
   }

@@ -243,7 +243,9 @@ void EthernetInit(void) {
 #if CONFIG_ETH_USE_ESP32_EMAC
   if (WT32_ETH01 == TasmotaGlobal.module_type) {
     Settings->eth_address = 1;                    // EthAddress
+#ifndef FIRMWARE_TASMOTA32_QEMU
     Settings->eth_type = ETH_PHY_LAN8720;         // EthType 0 = LAN8720
+#endif  // FIRMWARE_TASMOTA32_QEMU
     Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
   }
 #endif  // CONFIG_ETH_USE_ESP32_EMAC
@@ -257,7 +259,6 @@ void EthernetInit(void) {
       return;
     }
   } else {
-#ifndef FIRMWARE_TASMOTA32_QEMU
     // Native ESP32
     if (!PinUsed(GPIO_ETH_PHY_MDC, GPIO_ANY) && !PinUsed(GPIO_ETH_PHY_MDIO)) {  // && should be || but keep for backward compatibility
 #ifndef FIRMWARE_MINIMAL
@@ -265,7 +266,6 @@ void EthernetInit(void) {
 #endif // FIRMWARE_MINIMAL
       return;
     }
-#endif  // FIRMWARE_TASMOTA32_QEMU
   }
 
   eth_config_change = 0;
@@ -279,14 +279,6 @@ void EthernetInit(void) {
   uint32_t spi_bus = GetPin(eth_mdc) - AGPIO(GPIO_ETH_PHY_MDC); // 0 or 1
   int eth_mdio = Pin(GPIO_ETH_PHY_MDIO);          // Ethernet SPI IRQ
   int eth_power = Pin(GPIO_ETH_PHY_POWER);        // Ethernet SPI RST
-
-#ifdef FIRMWARE_TASMOTA32_QEMU
-  // QEMU emulates the OpenCores MAC; GPIOs are not used but ETH.begin()
-  // requires valid pin numbers.  __wrap_esp_eth_mac_new_esp32 (see above)
-  // transparently redirects the MAC creation to esp_eth_mac_new_openeth().
-  if (eth_mdc  < 0) { eth_mdc  = 23; }
-  if (eth_mdio < 0) { eth_mdio = 18; }
-#endif  // FIRMWARE_TASMOTA32_QEMU
 
 #ifdef USE_IPV6
   ETH.enableIPv6();   // enable Link-Local

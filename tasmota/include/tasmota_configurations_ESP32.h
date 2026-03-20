@@ -809,6 +809,22 @@
 #endif // FIRMWARE_TASMOTA32
 
 /*********************************************************************************************\
+ * [tasmota32-qemu]
+ * QEMU-specific overrides: use WT32-ETH01 module (GPIO18=MDIO, GPIO23=MDC) and DP83848 PHY
+\*********************************************************************************************/
+#ifdef FIRMWARE_TASMOTA32_QEMU
+#define USE_WT32_ETH01                           // Enable WT32-ETH01 module support (required for MODULE below)
+#undef MODULE
+#define MODULE                 WT32_ETH01        // Module template with ETH GPIO pins: GPIO18=MDIO, GPIO23=MDC
+#undef FALLBACK_MODULE
+#define FALLBACK_MODULE        WT32_ETH01
+#undef ETH_TYPE
+#define ETH_TYPE               3                 // ETH_PHY_DP83848 - PHY emulated by Espressif QEMU
+#undef ETH_ADDRESS
+#define ETH_ADDRESS            1                 // PHY address used by Espressif QEMU
+#endif // FIRMWARE_TASMOTA32_QEMU
+
+/*********************************************************************************************\
  * Post-process compile options for Matter
 \*********************************************************************************************/
 
