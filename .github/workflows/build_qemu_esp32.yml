@@ -28,7 +28,7 @@ env:
   QEMU_VERSION: esp_develop_9.2.2_20250228
 
 jobs:
-  safeboot:
+  build-qemu-image:
     runs-on: ubuntu-latest
     if: github.repository == 'r-buc/Tasmota'
     permissions:
@@ -53,50 +53,14 @@ jobs:
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: '1'
         run: platformio run -e tasmota32-safeboot
-      - name: Upload safeboot artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tasmota32-safeboot
-          path: ./build_output
-
-  build-qemu-image:
-    needs: safeboot
-    runs-on: ubuntu-latest
-    if: github.repository == 'r-buc/Tasmota'
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          enable-cache: false
-      - name: Install dependencies
-        run: |
-          uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
-          cp ./platformio_override_sample.ini ./platformio_override.ini
-      - name: Download safeboot firmware
-        uses: actions/download-artifact@v4
-        with:
-          name: tasmota32-safeboot
-          path: ./temp
       - name: Move safeboot files into place
         run: |
           mkdir -p ./firmware/firmware
-          find ./temp -type f -exec cp -t ./firmware/firmware {} +
+          cp ./build_output/firmware/*.bin ./firmware/firmware/ 2>/dev/null || true
       - name: Run PlatformIO (tasmota32-qemu)
         env:
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: '1'
-        # tasmota32-qemu is a QEMU-compatible variant of tasmota32.
-        # It sets -DFIRMWARE_TASMOTA32_QEMU which disables WiFi init at
-        # boot so the firmware can run on the Espressif QEMU ESP32 machine,
-        # which does not emulate the ESP32 WiFi hardware.
         run: platformio run -e tasmota32-qemu
       - name: Collect QEMU binaries and create flash image
         run: |

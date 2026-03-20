@@ -603,10 +603,7 @@ void setup(void) {
     }
 #ifdef FIRMWARE_TASMOTA32_QEMU
     // WiFi hardware is not emulated in the Espressif QEMU ESP32 machine.
-    // Disable WiFi and enable Ethernet instead.  QEMU's OpenCores Ethernet MAC
-    // is routed through the -Wl,--wrap=esp_eth_mac_new_esp32 trampoline which
-    // substitutes esp_eth_mac_new_openeth() for the Synopsys GMAC driver.
-    // QEMU emulates a DP83848C PHY at MII address 1.
+    // Disable WiFi and enable Ethernet with the DP83848C PHY that QEMU emulates.
     Settings->flag4.network_wifi = 0;
     Settings->flag4.network_ethernet = 1;
     Settings->eth_type = 3;     // ETH_PHY_DP83848 – the PHY QEMU emulates
