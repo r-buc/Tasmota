@@ -562,16 +562,6 @@
 #endif // FIRMWARE_NSPANEL
 
 /*********************************************************************************************\
- * [tasmota32-qemu]
- * Map FIRMWARE_QEMU to FIRMWARE_TASMOTA32 so that the full tasmota32 feature set is
- * included.  All QEMU-specific settings (MODULE, ETH_TYPE, etc.) live in
- * user_config_override.h; the FIRMWARE_TASMOTA32 block below does not touch MODULE.
-\*********************************************************************************************/
-#ifdef FIRMWARE_QEMU
-#define FIRMWARE_TASMOTA32
-#endif  // FIRMWARE_QEMU
-
-/*********************************************************************************************\
  * [tasmota32.bin]
  * Provide an image which includes KNX and Sensors
 \*********************************************************************************************/

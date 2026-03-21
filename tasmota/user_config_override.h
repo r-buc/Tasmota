@@ -16,6 +16,8 @@
 
 // QEMU-specific settings: WT32-ETH01 module with DP83848 PHY (emulated by Espressif QEMU)
 #ifdef FIRMWARE_QEMU
+#define CODE_IMAGE_STR         "qemu"
+#define USE_ETHERNET                             // Enable Ethernet support
 #define USE_WT32_ETH01                           // Enable WT32-ETH01 support: GPIO18=ETH_MDIO, GPIO23=ETH_MDC
 #undef MODULE
 #define MODULE                 WT32_ETH01        // [Module] WT32-ETH01 template: GPIO18=MDIO, GPIO23=MDC
