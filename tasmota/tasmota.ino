@@ -601,9 +601,6 @@ void setup(void) {
     if (!Settings->flag4.network_ethernet) {
       Settings->flag4.network_wifi = 1;         // Make sure we're in control
     }
-#ifdef FIRMWARE_TASMOTA32_QEMU
-    Settings->flag4.network_wifi = 0;            // WiFi hardware is not emulated in QEMU
-#endif  // FIRMWARE_TASMOTA32_QEMU
 #endif  // ESP32
   }
 

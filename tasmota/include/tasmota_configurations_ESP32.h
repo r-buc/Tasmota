@@ -562,6 +562,16 @@
 #endif // FIRMWARE_NSPANEL
 
 /*********************************************************************************************\
+ * [tasmota32-qemu]
+ * Map FIRMWARE_QEMU to FIRMWARE_TASMOTA32 so that the full tasmota32 feature set is
+ * included.  All QEMU-specific settings (MODULE, ETH_TYPE, etc.) live in
+ * user_config_override.h; the FIRMWARE_TASMOTA32 block below does not touch MODULE.
+\*********************************************************************************************/
+#ifdef FIRMWARE_QEMU
+#define FIRMWARE_TASMOTA32
+#endif  // FIRMWARE_QEMU
+
+/*********************************************************************************************\
  * [tasmota32.bin]
  * Provide an image which includes KNX and Sensors
 \*********************************************************************************************/
@@ -807,20 +817,6 @@
 #define USE_ESP32_TWAI                           // Add support for TWAI/CAN interface (+7k code)
 
 #endif // FIRMWARE_TASMOTA32
-
-/*********************************************************************************************\
- * [tasmota32-qemu]
- * Use WT32-ETH01 module template so GPIO18=MDIO and GPIO23=MDC are pre-configured.
- * (USE_WT32_ETH01/ETH_TYPE/ETH_ADDRESS are set in user_config_override.h;
- *  MODULE/FALLBACK_MODULE must be here because tasmota_compat.h undefines MODULE
- *  and the FIRMWARE_TASMOTA32 block above resets it to WEMOS before we get here.)
-\*********************************************************************************************/
-#ifdef FIRMWARE_TASMOTA32_QEMU
-#undef MODULE
-#define MODULE                 WT32_ETH01        // Module template with ETH GPIO pins: GPIO18=MDIO, GPIO23=MDC
-#undef FALLBACK_MODULE
-#define FALLBACK_MODULE        WT32_ETH01
-#endif // FIRMWARE_TASMOTA32_QEMU
 
 /*********************************************************************************************\
  * Post-process compile options for Matter

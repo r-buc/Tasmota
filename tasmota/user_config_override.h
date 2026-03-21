@@ -15,13 +15,17 @@
 #endif
 
 // QEMU-specific settings: WT32-ETH01 module with DP83848 PHY (emulated by Espressif QEMU)
-#ifdef FIRMWARE_TASMOTA32_QEMU
+#ifdef FIRMWARE_QEMU
 #define USE_WT32_ETH01                           // Enable WT32-ETH01 support: GPIO18=ETH_MDIO, GPIO23=ETH_MDC
+#undef MODULE
+#define MODULE                 WT32_ETH01        // [Module] WT32-ETH01 template: GPIO18=MDIO, GPIO23=MDC
+#undef FALLBACK_MODULE
+#define FALLBACK_MODULE        WT32_ETH01
 #undef ETH_TYPE
 #define ETH_TYPE               3                 // ETH_PHY_DP83848 - PHY emulated by Espressif QEMU
 #undef ETH_ADDRESS
 #define ETH_ADDRESS            1                 // PHY address used by Espressif QEMU
-#endif  // FIRMWARE_TASMOTA32_QEMU
+#endif  // FIRMWARE_QEMU
 
 // THIS SECTION IS USED TO REMOVE EVERYTHING LISTED FROM DEFAULT BINARY
 /*
