@@ -24,9 +24,8 @@ concurrency:
 # Binary asset naming: qemu-xtensa-softmmu-<VERSION_UNDERSCORED>-x86_64-linux-gnu.tar.xz
 # Requires glibc >= 2.31; ubuntu-latest (24.04) ships glibc 2.39.
 env:
-  QEMU_RELEASE: esp-develop-9.2.2-20250228
-  QEMU_VERSION: esp_develop_9.2.2_20250228
-
+  QEMU_RELEASE: esp-develop-9.2.2-20250817
+  QEMU_VERSION: esp_develop_9.2.2-20250817
 jobs:
   qemu-image:
     runs-on: ubuntu-latest
