@@ -1078,7 +1078,9 @@ void SettingsDefaultSet2(void) {
 #endif  // ESP32
 
   // Wifi
+#ifndef FIRMWARE_QEMU  // WiFi hardware is not emulated in QEMU
   flag4.network_wifi |= 1;
+#endif  // FIRMWARE_QEMU
   flag3.use_wifi_scan |= WIFI_SCAN_AT_RESTART;
   flag3.use_wifi_rescan |= WIFI_SCAN_REGULARLY;
   Settings->wifi_output_power = MAX_TX_PWR_DBM_54g;

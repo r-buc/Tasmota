@@ -28,7 +28,7 @@ env:
   QEMU_VERSION: esp_develop_9.2.2_20250228
 
 jobs:
-  safeboot:
+  build-qemu-image:
     runs-on: ubuntu-latest
     if: github.repository == 'r-buc/Tasmota'
     permissions:
@@ -53,104 +53,42 @@ jobs:
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: '1'
         run: platformio run -e tasmota32-safeboot
-      - name: Upload safeboot artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tasmota32-safeboot
-          path: ./build_output
-
-  build-qemu-image:
-    needs: safeboot
-    runs-on: ubuntu-latest
-    if: github.repository == 'r-buc/Tasmota'
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          enable-cache: false
-      - name: Install dependencies
-        run: |
-          uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
-          cp ./platformio_override_sample.ini ./platformio_override.ini
-      - name: Download safeboot firmware
-        uses: actions/download-artifact@v4
-        with:
-          name: tasmota32-safeboot
-          path: ./temp
       - name: Move safeboot files into place
         run: |
           mkdir -p ./firmware/firmware
-          find ./temp -type f -exec cp -t ./firmware/firmware {} +
+          cp ./build_output/firmware/*.bin ./firmware/firmware/ 2>/dev/null || true
       - name: Run PlatformIO (tasmota32-qemu)
         env:
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: '1'
-        # tasmota32-qemu is a QEMU-compatible variant of tasmota32.
-        # It sets -DFIRMWARE_TASMOTA32_QEMU which disables WiFi init at
-        # boot so the firmware can run on the Espressif QEMU ESP32 machine,
-        # which does not emulate the ESP32 WiFi hardware.
         run: platformio run -e tasmota32-qemu
-      - name: Collect QEMU binaries and create merged flash image
+      - name: Collect QEMU binaries and create flash image
         run: |
-          # Install esptool for merge_bin
-          uv pip install --system esptool
-
-          # Locate build artifacts produced by PlatformIO
           BUILD_DIR=".pio/build/tasmota32-qemu"
-
-          # Gather the individual binaries needed for QEMU
           mkdir -p qemu_image
 
-          # Bootloader and boot_app0 come from the ESP-IDF/Arduino package;
-          # PlatformIO copies them into the build directory via FLASH_EXTRA_IMAGES.
-          # Retrieve the resolved paths from the environment.
-          BOOTLOADER=$(find ~/.platformio -name "bootloader_dout_40m.bin" 2>/dev/null | head -1)
-          BOOT_APP0=$(find ~/.platformio -name "boot_app0.bin" 2>/dev/null | head -1)
-
-          cp "${BUILD_DIR}/partitions.bin"  qemu_image/partitions.bin
-          cp "${BUILD_DIR}/firmware.bin"    qemu_image/tasmota32.bin
-
-          if [ -n "$BOOTLOADER" ]; then
-            cp "$BOOTLOADER" qemu_image/bootloader.bin
-          fi
-
-          if [ -n "$BOOT_APP0" ]; then
-            cp "$BOOT_APP0" qemu_image/boot_app0.bin
-          fi
-
-          # Build the merged raw flash image that QEMU can boot directly.
-          # Layout (standard ESP32 4 MB flash):
+          # PlatformIO's post_esp32.py assembles firmware.factory.bin with the
+          # correct partition layout:
           #   0x1000  - bootloader
           #   0x8000  - partition table
-          #   0xe000  - boot_app0
-          #   0x10000 - application firmware
-          MERGE_ARGS=""
-          if [ -n "$BOOTLOADER" ]; then
-            MERGE_ARGS="$MERGE_ARGS 0x1000 $BOOTLOADER"
+          #   0xe000  - boot_app0 (OTA data)
+          #   0x10000 - safeboot firmware (factory partition)
+          #   0xe0000 - main Tasmota firmware (app0 partition)
+          #
+          # QEMU's MTD flash device only accepts images of exactly 2, 4, 8, or
+          # 16 MB.  Use dd with conv=sync to pad the factory image to exactly 4 MB.
+          # Fail explicitly if the source already exceeds 4 MB (would be silently
+          # truncated by dd otherwise).
+          SRC="${BUILD_DIR}/firmware.factory.bin"
+          SIZE=$(stat -c%s "$SRC")
+          MAX=$((4 * 1024 * 1024))
+          if [ "$SIZE" -gt "$MAX" ]; then
+            echo "ERROR: firmware.factory.bin ($SIZE bytes) exceeds 4 MB flash limit"
+            exit 1
           fi
-          MERGE_ARGS="$MERGE_ARGS 0x8000 ${BUILD_DIR}/partitions.bin"
-          if [ -n "$BOOT_APP0" ]; then
-            MERGE_ARGS="$MERGE_ARGS 0xe000 $BOOT_APP0"
-          fi
-          MERGE_ARGS="$MERGE_ARGS 0x10000 ${BUILD_DIR}/firmware.bin"
+          dd if="$SRC" of="qemu_image/tasmota32-qemu-flash.bin" bs=4M count=1 conv=sync
 
-          esptool.py --chip esp32 merge_bin \
-            --output qemu_image/tasmota32-qemu-flash.bin \
-            --fill-flash-size 4MB \
-            --flash-mode dout \
-            --flash-freq 40m \
-            --flash-size 4MB \
-            $MERGE_ARGS
-
-          echo "=== QEMU image contents ==="
+          echo "=== QEMU flash image ==="
           ls -lh qemu_image/
       - name: Install Espressif QEMU
         run: |
@@ -173,10 +111,9 @@ jobs:
           # Run QEMU in the background.
           # -nographic         : headless – no graphical display
           # -machine esp32     : Espressif ESP32 dual-core Xtensa LX6 machine
-          # -drive ...         : attach the 4 MB raw flash image as MTD flash
-          # -nic user,...      : SLIRP user-mode networking using the OpenCores
-          #                      Ethernet MAC (open_eth), which the ESP32 EMAC
-          #                      driver talks to via QEMU emulation.
+          # -drive ...         : attach the factory flash image as MTD flash
+          # -nic user,...      : SLIRP user-mode networking routed through the
+          #                      OpenCores Ethernet MAC (open_eth).
           #                      hostfwd forwards host TCP:18080 → guest TCP:80
           # -serial file       : capture UART0 for log analysis
           qemu-system-xtensa \
@@ -185,11 +122,12 @@ jobs:
             -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
             -nic user,model=open_eth,hostfwd=tcp::18080-:80 \
             -serial file:qemu_serial.log \
+            -monitor null \
             2>/dev/null &
           QEMU_PID=$!
           echo "QEMU PID: $QEMU_PID"
 
-          # --- Step 1: wait for Tasmota to complete setup() (up to 60 s) ---
+          # --- Step 1: wait for Tasmota to reach main init (up to 60 s) ---
           echo "Waiting for Tasmota to reach main init..."
           TIMEOUT=60
           ELAPSED=0
@@ -207,11 +145,11 @@ jobs:
             cat qemu_serial.log || true
             exit 1
           fi
-          echo "✓ Boot test PASSED – Tasmota reached main init"
+          echo "✓ Boot PASSED – Tasmota reached main init"
 
           # --- Step 2: wait for Ethernet to get an IP address (up to 60 s) ---
           # Tasmota logs "ETH: Connected" when the link comes up and
-          # "ETH: Got IP" / "ETH: IPv4" when DHCP assigns an address.
+          # "ETH: IPv4" / "ETH: Got IP" when DHCP assigns an address.
           echo "Waiting for Ethernet IP address..."
           TIMEOUT=60
           ELAPSED=0
@@ -235,9 +173,6 @@ jobs:
           sleep 5
 
           # --- Step 3: HTTP reachability – run Status 0 command via HTTP ---
-          # The Tasmota web command interface accepts:
-          #   GET /cm?cmnd=Status%200
-          # and returns a JSON object whose top-level key is "Status".
           echo "Testing HTTP reachability via Status 0 command..."
           HTTP_CODE=$(curl -s \
             --max-time 15 \

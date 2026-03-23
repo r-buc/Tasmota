@@ -58,3 +58,8 @@ lib/libesp32/berry/berry
 ## Python virtual environments for Platformio ##
 venv
 .venv
+
+## QEMU workflow build artefacts ##
+qemu_image/
+qemu_serial.log
+firmware/firmware/
