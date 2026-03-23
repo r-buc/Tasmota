@@ -28,7 +28,7 @@ env:
   QEMU_VERSION: esp_develop_9.2.2_20250228
 
 jobs:
-  build-qemu-image:
+  qemu-image:
     runs-on: ubuntu-latest
     if: github.repository == 'r-buc/Tasmota'
     permissions:
@@ -214,4 +214,29 @@ jobs:
         with:
           name: tasmota-qemu-esp32-image
           path: tasmota-qemu-esp32-image.zip
+  Release:
+    needs: [qemu-image]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download all Tasmota artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: tasmota*
+        path: ./temp
+    - name: Move files
+      run: |
+        mkdir -p ./release
+        find ./temp -type f -exec cp -t ./release {} +
+    - name: Display structure of downloaded files
+      run: ls -R ./release/
+    - name: Release
+      uses: jason2866/action-gh-release@v1.2
+      with:
+        tag_name: ${{ github.run_number }}
+        files: |
+          ./release/tasmota*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
