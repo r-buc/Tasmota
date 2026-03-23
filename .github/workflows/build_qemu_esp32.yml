@@ -25,7 +25,7 @@ concurrency:
 # Requires glibc >= 2.31; ubuntu-latest (24.04) ships glibc 2.39.
 env:
   QEMU_RELEASE: esp-develop-9.2.2-20250817
-  QEMU_VERSION: esp_develop_9.2.2-20250817
+  QEMU_VERSION: esp_develop_9.2.2_20250817
 jobs:
   qemu-image:
     runs-on: ubuntu-latest
