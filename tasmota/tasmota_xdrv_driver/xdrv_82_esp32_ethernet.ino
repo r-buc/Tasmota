@@ -145,8 +145,17 @@ uint8_t eth_config_change;
 // from libesp_eth.a (compiled in via custom_sdkconfig = CONFIG_ETH_USE_OPENETH=y).
 #ifdef FIRMWARE_QEMU
 #include <esp_eth_mac_openeth.h>
+// Keep a pointer to the open_eth MAC so it can be stopped before a software
+// reset.  When the ESP32 performs a SW_CPU_RESET, QEMU's open_eth device
+// continues issuing DMA transactions into stale descriptor memory, which
+// corrupts RAM during the next boot and causes an InstrFetchProhibited /
+// Cache-disabled crash loop.  Calling mac->stop() clears the MODER RX/TX
+// enable bits on the emulated OpenCores MAC before the reset fires, so QEMU
+// stops DMA and the next cold-boot succeeds.
+static esp_eth_mac_t *s_openeth_mac = nullptr;
 extern "C" esp_eth_mac_t *__wrap_esp_eth_mac_new_esp32(const void*, const eth_mac_config_t *config) {
-  return esp_eth_mac_new_openeth(config);
+  s_openeth_mac = esp_eth_mac_new_openeth(config);
+  return s_openeth_mac;
 }
 #endif  // FIRMWARE_QEMU
 
@@ -243,8 +252,22 @@ void EthernetInit(void) {
 #if CONFIG_ETH_USE_ESP32_EMAC
   if (WT32_ETH01 == TasmotaGlobal.module_type) {
     Settings->eth_address = 1;                    // EthAddress
+#ifdef FIRMWARE_QEMU
+    // In QEMU, the emulated PHY is DP83848 (ETH_TYPE = 3), not the LAN8720
+    // used by real WT32-ETH01 hardware.  Restore the compiled-in ETH_TYPE so
+    // that the correct PHY is used even after settings have been saved/restored
+    // from a previous boot (the WT32_ETH01 override below would otherwise
+    // write LAN8720 to flash and break Ethernet on every subsequent boot).
+    Settings->eth_type = ETH_TYPE;                // Restore compiled-in PHY type (DP83848 for QEMU)
+#else
     Settings->eth_type = ETH_PHY_LAN8720;         // EthType 0 = LAN8720
     Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
+#endif  // FIRMWARE_QEMU
+    // Reload eth_type from the (possibly updated) Settings value so ETH.begin()
+    // uses the correct PHY type regardless of what was read before this block.
+    eth_type = (Settings->eth_type < sizeof(eth_type_xtable)) ? eth_type_xtable[Settings->eth_type] : 0;
+    eth_uses_spi = (eth_type & ETH_USES_SPI);
+    eth_type = eth_type & 0x7F;
   }
 #endif  // CONFIG_ETH_USE_ESP32_EMAC
 
@@ -486,6 +509,17 @@ bool Xdrv82(uint32_t function) {
     case FUNC_INIT:
       EthernetInit();
       break;
+#ifdef FIRMWARE_QEMU
+    case FUNC_ABOUT_TO_RESTART:
+      // Stop the open_eth MAC before software reset to prevent QEMU's
+      // OpenCores Ethernet device from continuing DMA into stale descriptor
+      // memory across the reset boundary, which causes a crash loop.
+      if (s_openeth_mac != nullptr) {
+        s_openeth_mac->stop(s_openeth_mac);
+        s_openeth_mac = nullptr;
+      }
+      break;
+#endif  // FIRMWARE_QEMU
     case FUNC_ACTIVE:
       result = true;
       break;
