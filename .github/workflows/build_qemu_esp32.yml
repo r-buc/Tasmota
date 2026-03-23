@@ -99,7 +99,7 @@ jobs:
           # Espressif QEMU release.  The archive extracts to qemu/bin/qemu-system-xtensa.
           curl -L -o /tmp/qemu-esp32.tar.xz \
             "https://github.com/espressif/qemu/releases/download/${{ env.QEMU_RELEASE }}/qemu-xtensa-softmmu-${{ env.QEMU_VERSION }}-x86_64-linux-gnu.tar.xz"
-          tar -xf /tmp/qemu-esp32.tar.xz -C /tmp
+          tar -xJf /tmp/qemu-esp32.tar.xz -C /tmp
           echo "/tmp/qemu/bin" >> "$GITHUB_PATH"
 
           /tmp/qemu/bin/qemu-system-xtensa --version
