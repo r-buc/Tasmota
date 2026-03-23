@@ -204,6 +204,72 @@ jobs:
           echo ""
           echo "--- QEMU serial output (last 60 lines) ---"
           tail -60 qemu_serial.log || true
+
+          # =================================================================
+          # Second boot: confirm that the image with saved config (Count > 1)
+          # still boots and reaches the network without a crash loop.
+          # This is the scenario that previously triggered the boot loop bug.
+          # =================================================================
+          echo ""
+          echo "=== Second boot test (saved-config image) ==="
+          > qemu_serial2.log
+
+          qemu-system-xtensa \
+            -nographic \
+            -machine esp32 \
+            -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
+            -nic user,model=open_eth,hostfwd=tcp::18081-:80 \
+            -serial file:qemu_serial2.log \
+            -monitor null \
+            2>/dev/null &
+          QEMU_PID2=$!
+          echo "QEMU PID (2nd boot): $QEMU_PID2"
+
+          # Wait for Tasmota to reach main init.
+          echo "Waiting for Tasmota to reach main init (2nd boot)..."
+          TIMEOUT=60
+          ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if grep -q "Project tasmota" qemu_serial2.log 2>/dev/null; then
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
+
+          if ! grep -q "Project tasmota" qemu_serial2.log 2>/dev/null; then
+            echo "✗ 2nd boot test FAILED – 'Project tasmota' not found after ${TIMEOUT}s"
+            kill "$QEMU_PID2" 2>/dev/null || true
+            cat qemu_serial2.log || true
+            exit 1
+          fi
+          echo "✓ 2nd boot PASSED – Tasmota reached main init"
+
+          # Wait for Ethernet IP on the second boot.
+          echo "Waiting for Ethernet IP address (2nd boot)..."
+          TIMEOUT=60
+          ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial2.log 2>/dev/null; then
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
+
+          if ! grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial2.log 2>/dev/null; then
+            echo "✗ 2nd boot network test FAILED – Ethernet did not come up after ${TIMEOUT}s"
+            kill "$QEMU_PID2" 2>/dev/null || true
+            cat qemu_serial2.log || true
+            exit 1
+          fi
+          echo "✓ 2nd boot Ethernet is up"
+
+          kill "$QEMU_PID2" 2>/dev/null || true
+
+          echo ""
+          echo "--- QEMU serial output 2nd boot (last 40 lines) ---"
+          tail -40 qemu_serial2.log || true
       - name: Zip QEMU image
         run: |
           cd qemu_image

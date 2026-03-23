@@ -250,25 +250,20 @@ void EthernetInit(void) {
   bool eth_uses_spi = (eth_type & ETH_USES_SPI);
   eth_type = eth_type & 0x7F;     // remove SPI flag
 #if CONFIG_ETH_USE_ESP32_EMAC
+#ifndef FIRMWARE_QEMU
+  // Apply WT32-ETH01 hardware-specific settings.  Skipped for FIRMWARE_QEMU
+  // because the correct ETH_TYPE (DP83848) and ETH_ADDRESS are already set via
+  // user_config_override.h / compiled-in defaults; writing the LAN8720 values
+  // here would corrupt flash and break Ethernet on every subsequent boot.
   if (WT32_ETH01 == TasmotaGlobal.module_type) {
     Settings->eth_address = 1;                    // EthAddress
-#ifdef FIRMWARE_QEMU
-    // In QEMU, the emulated PHY is DP83848 (ETH_TYPE = 3), not the LAN8720
-    // used by real WT32-ETH01 hardware.  Restore the compiled-in ETH_TYPE so
-    // that the correct PHY is used even after settings have been saved/restored
-    // from a previous boot (the WT32_ETH01 override below would otherwise
-    // write LAN8720 to flash and break Ethernet on every subsequent boot).
-    Settings->eth_type = ETH_TYPE;                // Restore compiled-in PHY type (DP83848 for QEMU)
-#else
     Settings->eth_type = ETH_PHY_LAN8720;         // EthType 0 = LAN8720
     Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
-#endif  // FIRMWARE_QEMU
-    // Reload eth_type from the (possibly updated) Settings value so ETH.begin()
-    // uses the correct PHY type regardless of what was read before this block.
     eth_type = (Settings->eth_type < sizeof(eth_type_xtable)) ? eth_type_xtable[Settings->eth_type] : 0;
     eth_uses_spi = (eth_type & ETH_USES_SPI);
     eth_type = eth_type & 0x7F;
   }
+#endif  // FIRMWARE_QEMU
 #endif  // CONFIG_ETH_USE_ESP32_EMAC
 
   if (eth_uses_spi) {
