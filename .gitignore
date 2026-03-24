@@ -61,5 +61,5 @@ venv
 
 ## QEMU workflow build artefacts ##
 qemu_image/
-qemu_serial.log
+qemu_serial*.log
 firmware/firmware/
