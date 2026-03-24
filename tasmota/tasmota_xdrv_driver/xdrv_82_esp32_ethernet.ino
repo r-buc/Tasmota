@@ -160,8 +160,16 @@ uint8_t eth_config_change;
 #include <esp_eth_mac_openeth.h>
 #include <esp_intr_alloc.h>
 
+// Keep a pointer to the open_eth MAC so it can be stopped before a software
+// reset.  When the ESP32 performs a SW_CPU_RESET, QEMU's open_eth device
+// continues issuing DMA transactions into stale descriptor memory, which
+// corrupts RAM during the next boot and causes an InstrFetchProhibited crash
+// loop.  Calling mac->stop() clears the MODER RX/TX enable bits on the
+// emulated OpenCores MAC before the reset fires.
+static esp_eth_mac_t *s_openeth_mac = nullptr;
 extern "C" esp_eth_mac_t *__wrap_esp_eth_mac_new_esp32(const void*, const eth_mac_config_t *config) {
-  return esp_eth_mac_new_openeth(config);
+  s_openeth_mac = esp_eth_mac_new_openeth(config);
+  return s_openeth_mac;
 }
 
 // ETS_ETH_MAC_INTR_SOURCE is the ESP32 interrupt-matrix source number used by
@@ -532,6 +540,27 @@ bool Xdrv82(uint32_t function) {
     case FUNC_INIT:
       EthernetInit();
       break;
+#ifdef FIRMWARE_QEMU
+    case FUNC_ABOUT_TO_RESTART:
+      // Stop the open_eth MAC DMA before resetting.
+      if (s_openeth_mac != nullptr) {
+        s_openeth_mac->stop(s_openeth_mac);
+        s_openeth_mac = nullptr;
+      }
+      // esp_restart() in this ESP-IDF version triggers only SW_CPU_RESET
+      // (rst:0xc), which does NOT reset peripherals in QEMU.  After
+      // SW_CPU_RESET, QEMU's open_eth DMA engine keeps running and writes
+      // received frames into the memory region the next boot uses as its
+      // startup stack, causing an InstrFetchProhibited crash loop.
+      //
+      // Force a full system reset (SW_SYS_RST, bit 31 of RTC_CNTL_OPTIONS0_REG
+      // at 0x3FF48000) instead.  QEMU responds to SW_SYS_RST by resetting ALL
+      // simulated devices — including the open_eth DMA engine — so the next
+      // boot starts with a completely clean device state.
+      *((volatile uint32_t *)0x3FF48000UL) = 0x80000000UL;  // SW_SYS_RST
+      while (true) {}  // unreachable; QEMU resets before reaching here
+      break;
+#endif  // FIRMWARE_QEMU
     case FUNC_ACTIVE:
       result = true;
       break;
