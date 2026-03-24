@@ -87,7 +87,11 @@ jobs:
           fi
           dd if="$SRC" of="qemu_image/tasmota32-qemu-flash.bin" bs=4M count=1 conv=sync
 
-          echo "=== QEMU flash image ==="
+          # Also include the OTA-only application binary (no bootloader/partition
+          # table) so the safeboot OTA test can upload it via the /u HTTP endpoint.
+          cp "build_output/firmware/tasmota32-qemu.bin" qemu_image/
+
+          echo "=== QEMU artifacts ==="
           ls -lh qemu_image/
       - name: Zip QEMU image
         run: |
@@ -130,165 +134,394 @@ jobs:
           mkdir -p qemu_image
           unzip tasmota-qemu-esp32-image.zip -d qemu_image
           ls -lh qemu_image/
-      - name: Boot and network test in QEMU
-        run: |
-          # Helper: run one QEMU boot, wait for boot+ethernet, run an HTTP check.
-          # Usage: run_qemu_boot <boot_number> <log_file> <host_port>
-          run_qemu_boot() {
-            local BOOT_NUM="$1"
-            local LOG="$2"
-            local PORT="$3"
 
-            echo ""
-            echo "=== Boot $BOOT_NUM ==="
+      # ------------------------------------------------------------------
+      # Boot tests 1 & 2: power-cycle reboots
+      # Boot 1 verifies first-time startup and HTTP reachability.
+      # Boot 2 reuses the flash image (with saved config from boot 1) to
+      # confirm the crash-loop regression is fixed.
+      # ------------------------------------------------------------------
+      - name: Boot test – power cycle (boots 1 & 2)
+        run: |
+          wait_for_pattern() {
+            local LOG="$1" PAT="$2" TIMEOUT="${3:-60}" ELAPSED=0
+            while [ $ELAPSED -lt $TIMEOUT ]; do
+              grep -qE "$PAT" "$LOG" 2>/dev/null && return 0
+              sleep 2; ELAPSED=$((ELAPSED + 2))
+            done
+            return 1
+          }
+
+          for BOOT_NUM in 1 2; do
+            PORT=$((18079 + BOOT_NUM))
+            LOG="qemu_serial_${BOOT_NUM}.log"
+            echo ""; echo "=== Boot $BOOT_NUM (power cycle) ==="
             > "$LOG"
 
             qemu-system-xtensa \
-              -nographic \
-              -machine esp32 \
+              -nographic -machine esp32 \
               -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
               -nic user,model=open_eth,hostfwd=tcp::${PORT}-:80 \
-              -serial file:"$LOG" \
-              -monitor null \
-              2>/dev/null &
-            local QEMU_PID=$!
-            echo "QEMU PID: $QEMU_PID"
+              -serial file:"$LOG" -monitor null 2>/dev/null &
+            QEMU_PID=$!
 
-            # Wait for Tasmota main init (up to 60 s).
-            local TIMEOUT=60 ELAPSED=0
+            if ! wait_for_pattern "$LOG" "Project tasmota"; then
+              echo "✗ Boot $BOOT_NUM FAILED – 'Project tasmota' not found"
+              kill "$QEMU_PID" 2>/dev/null || true; cat "$LOG"; exit 1
+            fi
+            echo "✓ Boot $BOOT_NUM – Tasmota reached main init"
+
+            if ! wait_for_pattern "$LOG" "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP"; then
+              echo "✗ Boot $BOOT_NUM FAILED – Ethernet did not come up"
+              kill "$QEMU_PID" 2>/dev/null || true; cat "$LOG"; exit 1
+            fi
+            echo "✓ Boot $BOOT_NUM – Ethernet is up"
+
+            # HTTP reachability check on boot 1 only.
+            if [ "$BOOT_NUM" -eq 1 ]; then
+              sleep 5
+              HTTP_CODE=$(curl -s --max-time 15 \
+                -o /tmp/status_b1.json -w "%{http_code}" \
+                "http://localhost:${PORT}/cm?cmnd=Status%200" || echo "000")
+              echo "HTTP code: $HTTP_CODE"; cat /tmp/status_b1.json || true; echo ""
+              if [ "$HTTP_CODE" != "200" ] || ! grep -q '"Status"' /tmp/status_b1.json 2>/dev/null; then
+                echo "✗ Boot 1 HTTP test FAILED (code=$HTTP_CODE)"
+                kill "$QEMU_PID" 2>/dev/null || true; cat "$LOG"; exit 1
+              fi
+              echo "✓ Boot 1 – HTTP Status 0 returned 200"
+            fi
+
+            kill "$QEMU_PID" 2>/dev/null || true
+            echo "--- Last 20 lines of serial log ---"
+            tail -20 "$LOG" || true
+          done
+          echo ""; echo "✓ Power-cycle boot tests passed"
+
+      # ------------------------------------------------------------------
+      # Boot test 3: software restart via Tasmota HTTP command
+      # Start one QEMU instance, wait for it to boot, then issue
+      # "Restart 1" via HTTP.  The ESP32 resets internally (QEMU process
+      # keeps running); detect the second boot in the same serial log.
+      # ------------------------------------------------------------------
+      - name: Boot test – software restart via Tasmota Restart 1 (boot 3)
+        run: |
+          echo "=== Boot 3 (software restart via HTTP 'Restart 1') ==="
+          > qemu_serial_3.log
+
+          qemu-system-xtensa \
+            -nographic -machine esp32 \
+            -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
+            -nic user,model=open_eth,hostfwd=tcp::18082-:80 \
+            -serial file:qemu_serial_3.log -monitor null 2>/dev/null &
+          QEMU_PID=$!
+          echo "QEMU PID: $QEMU_PID"
+
+          # Wait for first boot.
+          TIMEOUT=60; ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            grep -q "Project tasmota" qemu_serial_3.log 2>/dev/null && break
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          if ! grep -q "Project tasmota" qemu_serial_3.log 2>/dev/null; then
+            echo "✗ Boot 3 (1st) FAILED – 'Project tasmota' not found"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_3.log; exit 1
+          fi
+          TIMEOUT=60; ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial_3.log 2>/dev/null && break
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          if ! grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial_3.log 2>/dev/null; then
+            echo "✗ Boot 3 (1st) FAILED – Ethernet not up"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_3.log; exit 1
+          fi
+          echo "✓ Boot 3 (1st) – Tasmota running with Ethernet"
+
+          # Record log position then trigger software restart.
+          sleep 3
+          LINES_BEFORE=$(wc -l < qemu_serial_3.log)
+          echo "Log lines before restart: $LINES_BEFORE"
+          echo "Sending 'Restart 1' via HTTP..."
+          curl -s --max-time 10 "http://localhost:18082/cm?cmnd=Restart%201" || true
+
+          # The QEMU process stays alive; wait for a second 'Project tasmota'
+          # that appears after LINES_BEFORE in the continuing serial log.
+          echo "Waiting for Tasmota to reboot..."
+          TIMEOUT=90; ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            tail -n +$((LINES_BEFORE + 1)) qemu_serial_3.log 2>/dev/null \
+              | grep -q "Project tasmota" && break
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          if ! tail -n +$((LINES_BEFORE + 1)) qemu_serial_3.log 2>/dev/null \
+               | grep -q "Project tasmota"; then
+            echo "✗ Boot 3 – Tasmota did not reboot after Restart 1"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_3.log; exit 1
+          fi
+          echo "✓ Boot 3 – Tasmota rebooted (software restart)"
+
+          # Wait for Ethernet after the software restart.
+          TIMEOUT=60; ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            tail -n +$((LINES_BEFORE + 1)) qemu_serial_3.log 2>/dev/null \
+              | grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" && break
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          if ! tail -n +$((LINES_BEFORE + 1)) qemu_serial_3.log 2>/dev/null \
+               | grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP"; then
+            echo "✗ Boot 3 – Ethernet not up after software restart"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_3.log; exit 1
+          fi
+          echo "✓ Boot 3 – Ethernet up after software restart"
+
+          kill "$QEMU_PID" 2>/dev/null || true
+          echo "--- Last 20 lines of serial log ---"
+          tail -20 qemu_serial_3.log || true
+          echo ""; echo "✓ Software restart test passed"
+
+      # ------------------------------------------------------------------
+      # Stress test: 5 additional boot events alternating between
+      # power-cycle restarts and Tasmota software restarts.
+      # Two QEMU instances each contribute one power-cycle + one software
+      # restart (= 4 events); a final third instance adds one power-cycle
+      # (= 5 total).
+      # ------------------------------------------------------------------
+      - name: Stress test – 5 boot events (alternating power cycle / software restart)
+        run: |
+          FAILED=0
+
+          for ITER in 1 2; do
+            BOOT_PC=$((2 + ITER * 2))   # boots 4, 6
+            BOOT_SW=$((BOOT_PC + 1))    # boots 5, 7
+            PORT=$((18082 + ITER))      # ports 18083, 18084
+            LOG="qemu_serial_${BOOT_PC}.log"
+
+            echo ""; echo "=== Stress iter $ITER: power cycle (boot $BOOT_PC) + SW restart (boot $BOOT_SW) ==="
+            > "$LOG"
+
+            qemu-system-xtensa \
+              -nographic -machine esp32 \
+              -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
+              -nic user,model=open_eth,hostfwd=tcp::${PORT}-:80 \
+              -serial file:"$LOG" -monitor null 2>/dev/null &
+            QEMU_PID=$!
+
+            # ---- power-cycle boot ----
+            TIMEOUT=60; ELAPSED=0
             while [ $ELAPSED -lt $TIMEOUT ]; do
               grep -q "Project tasmota" "$LOG" 2>/dev/null && break
               sleep 2; ELAPSED=$((ELAPSED + 2))
             done
             if ! grep -q "Project tasmota" "$LOG" 2>/dev/null; then
-              echo "✗ Boot $BOOT_NUM FAILED – 'Project tasmota' not found after ${TIMEOUT}s"
+              echo "✗ Stress boot $BOOT_PC (PC) FAILED"
               kill "$QEMU_PID" 2>/dev/null || true
-              cat "$LOG" || true
-              return 1
+              FAILED=$((FAILED + 1)); continue
             fi
-            echo "✓ Boot $BOOT_NUM – Tasmota reached main init"
-
-            # Wait for Ethernet (up to 60 s).
             TIMEOUT=60; ELAPSED=0
             while [ $ELAPSED -lt $TIMEOUT ]; do
               grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" "$LOG" 2>/dev/null && break
               sleep 2; ELAPSED=$((ELAPSED + 2))
             done
             if ! grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" "$LOG" 2>/dev/null; then
-              echo "✗ Boot $BOOT_NUM FAILED – Ethernet did not come up after ${TIMEOUT}s"
+              echo "✗ Stress boot $BOOT_PC (PC) FAILED – Ethernet not up"
               kill "$QEMU_PID" 2>/dev/null || true
-              cat "$LOG" || true
-              return 1
+              FAILED=$((FAILED + 1)); continue
             fi
-            echo "✓ Boot $BOOT_NUM – Ethernet is up"
+            echo "✓ Stress boot $BOOT_PC (power cycle) – Ethernet up"
 
-            # HTTP reachability check (only on the first boot where we set up the port).
-            if [ "$BOOT_NUM" -eq 1 ]; then
-              sleep 5
-              echo "Testing HTTP reachability via Status 0 command..."
-              local HTTP_CODE
-              HTTP_CODE=$(curl -s \
-                --max-time 15 \
-                -o /tmp/status_response.json \
-                -w "%{http_code}" \
-                "http://localhost:${PORT}/cm?cmnd=Status%200" || echo "000")
-              echo "HTTP response code: $HTTP_CODE"
-              cat /tmp/status_response.json || true
-              echo ""
-              if [ "$HTTP_CODE" != "200" ]; then
-                echo "✗ Boot $BOOT_NUM HTTP test FAILED – expected 200, got $HTTP_CODE"
-                kill "$QEMU_PID" 2>/dev/null || true
-                cat "$LOG" || true
-                return 1
-              fi
-              if ! grep -q '"Status"' /tmp/status_response.json 2>/dev/null; then
-                echo "✗ Boot $BOOT_NUM HTTP test FAILED – response missing 'Status' key"
-                kill "$QEMU_PID" 2>/dev/null || true
-                cat "$LOG" || true
-                return 1
-              fi
-              echo "✓ Boot $BOOT_NUM – HTTP Status 0 returned HTTP 200"
-            fi
+            # ---- software restart ----
+            sleep 2
+            LINES_BEFORE=$(wc -l < "$LOG")
+            curl -s --max-time 10 "http://localhost:${PORT}/cm?cmnd=Restart%201" || true
 
-            kill "$QEMU_PID" 2>/dev/null || true
-            echo "--- Serial output boot $BOOT_NUM (last 40 lines) ---"
-            tail -40 "$LOG" || true
-            return 0
-          }
-
-          # Boot 1: first-time boot (fresh flash image, no saved config).
-          run_qemu_boot 1 qemu_serial_1.log 18080 || exit 1
-
-          # Boot 2: second boot with saved config — the scenario that previously
-          # triggered the crash loop (WT32_ETH01 PHY type corruption on flash write).
-          run_qemu_boot 2 qemu_serial_2.log 18081 || exit 1
-
-          echo ""
-          echo "✓ All required boot tests passed"
-      - name: Stress test – 5 consecutive boots
-        run: |
-          # Run QEMU 5 more times to confirm the fix holds across repeated boots.
-          # Each iteration reuses the same (already-written) flash image so any
-          # persistent flash corruption or PHY-type regression would surface here.
-          STRESS_BOOTS=5
-          FAILED=0
-
-          for i in $(seq 3 $((2 + STRESS_BOOTS))); do
-            PORT=$((18080 + i - 1))
-            LOG="qemu_serial_${i}.log"
-
-            echo ""
-            echo "=== Stress boot $i / $((2 + STRESS_BOOTS)) ==="
-            > "$LOG"
-
-            qemu-system-xtensa \
-              -nographic \
-              -machine esp32 \
-              -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
-              -nic user,model=open_eth,hostfwd=tcp::${PORT}-:80 \
-              -serial file:"$LOG" \
-              -monitor null \
-              2>/dev/null &
-            QEMU_PID=$!
-
-            # Wait for boot (up to 60 s).
-            TIMEOUT=60; ELAPSED=0
+            TIMEOUT=90; ELAPSED=0
             while [ $ELAPSED -lt $TIMEOUT ]; do
-              grep -q "Project tasmota" "$LOG" 2>/dev/null && break
+              tail -n +$((LINES_BEFORE + 1)) "$LOG" 2>/dev/null \
+                | grep -q "Project tasmota" && break
               sleep 2; ELAPSED=$((ELAPSED + 2))
             done
-            BOOT_OK=0
-            if grep -q "Project tasmota" "$LOG" 2>/dev/null; then
-              # Wait for Ethernet (up to 60 s).
-              TIMEOUT=60; ELAPSED=0
-              while [ $ELAPSED -lt $TIMEOUT ]; do
-                grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" "$LOG" 2>/dev/null && break
-                sleep 2; ELAPSED=$((ELAPSED + 2))
-              done
-              if grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" "$LOG" 2>/dev/null; then
-                BOOT_OK=1
-              fi
+            if ! tail -n +$((LINES_BEFORE + 1)) "$LOG" 2>/dev/null \
+                 | grep -q "Project tasmota"; then
+              echo "✗ Stress boot $BOOT_SW (SW restart) FAILED – no reboot"
+              kill "$QEMU_PID" 2>/dev/null || true
+              FAILED=$((FAILED + 1)); continue
             fi
-
+            TIMEOUT=60; ELAPSED=0
+            while [ $ELAPSED -lt $TIMEOUT ]; do
+              tail -n +$((LINES_BEFORE + 1)) "$LOG" 2>/dev/null \
+                | grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" && break
+              sleep 2; ELAPSED=$((ELAPSED + 2))
+            done
+            if ! tail -n +$((LINES_BEFORE + 1)) "$LOG" 2>/dev/null \
+                 | grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP"; then
+              echo "✗ Stress boot $BOOT_SW (SW restart) FAILED – Ethernet not up"
+              kill "$QEMU_PID" 2>/dev/null || true
+              FAILED=$((FAILED + 1)); continue
+            fi
+            echo "✓ Stress boot $BOOT_SW (software restart) – Ethernet up"
             kill "$QEMU_PID" 2>/dev/null || true
-
-            if [ "$BOOT_OK" -eq 1 ]; then
-              echo "✓ Stress boot $i passed"
-              tail -20 "$LOG" || true
-            else
-              echo "✗ Stress boot $i FAILED"
-              cat "$LOG" || true
-              FAILED=$((FAILED + 1))
-            fi
           done
 
+          # Final standalone power-cycle boot (boot 8).
+          echo ""; echo "=== Stress: final power cycle (boot 8) ==="
+          > qemu_serial_8.log
+          qemu-system-xtensa \
+            -nographic -machine esp32 \
+            -drive "file=qemu_image/tasmota32-qemu-flash.bin,if=mtd,format=raw" \
+            -nic user,model=open_eth,hostfwd=tcp::18085-:80 \
+            -serial file:qemu_serial_8.log -monitor null 2>/dev/null &
+          QEMU_PID=$!
+          TIMEOUT=60; ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            grep -q "Project tasmota" qemu_serial_8.log 2>/dev/null && break
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          BOOT_OK=0
+          if grep -q "Project tasmota" qemu_serial_8.log 2>/dev/null; then
+            TIMEOUT=60; ELAPSED=0
+            while [ $ELAPSED -lt $TIMEOUT ]; do
+              grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial_8.log 2>/dev/null && break
+              sleep 2; ELAPSED=$((ELAPSED + 2))
+            done
+            grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" qemu_serial_8.log 2>/dev/null && BOOT_OK=1
+          fi
+          kill "$QEMU_PID" 2>/dev/null || true
+          if [ "$BOOT_OK" -eq 1 ]; then
+            echo "✓ Stress boot 8 (power cycle) – Ethernet up"
+          else
+            echo "✗ Stress boot 8 FAILED"; cat qemu_serial_8.log || true
+            FAILED=$((FAILED + 1))
+          fi
+
           if [ "$FAILED" -gt 0 ]; then
-            echo ""
-            echo "✗ Stress test FAILED: $FAILED / $STRESS_BOOTS boots did not reach the network"
+            echo ""; echo "✗ Stress test FAILED: $FAILED event(s) failed"
             exit 1
           fi
-          echo ""
-          echo "✓ Stress test PASSED: all $STRESS_BOOTS consecutive boots reached the network"
+          echo ""; echo "✓ Stress test PASSED (5 boot events: 3 power cycles + 2 software restarts)"
+
+      # ------------------------------------------------------------------
+      # Safeboot OTA test
+      #
+      # The OTA data partition (0xe000, 8 KB) stores the currently active
+      # OTA slot.  Filling it with 0xFF (erased flash state) causes the
+      # ESP32 bootloader to fall back to the factory partition, which
+      # holds the tasmota32-qemu-safeboot firmware.
+      #
+      # From safeboot we POST tasmota32-qemu.bin to the /u HTTP endpoint.
+      # The safeboot firmware writes it to the app0 OTA slot and reboots.
+      # We then verify that the main Tasmota firmware comes up and responds
+      # to an HTTP Status 0 request.
+      # ------------------------------------------------------------------
+      - name: Safeboot OTA test
+        run: |
+          echo "=== Safeboot OTA test ==="
+
+          # Create a safeboot-only image by resetting the OTA data to 0xFF.
+          cp qemu_image/tasmota32-qemu-flash.bin qemu_image/safeboot_test_image.bin
+          python3 - <<'PYEOF'
+          with open("qemu_image/safeboot_test_image.bin", "r+b") as f:
+              f.seek(0xe000)
+              f.write(b"\xff" * 8192)
+          PYEOF
+          echo "Safeboot image ready (OTA data cleared)"
+          ls -lh qemu_image/safeboot_test_image.bin
+
+          # Boot into safeboot.
+          > qemu_serial_safeboot.log
+          qemu-system-xtensa \
+            -nographic -machine esp32 \
+            -drive "file=qemu_image/safeboot_test_image.bin,if=mtd,format=raw" \
+            -nic user,model=open_eth,hostfwd=tcp::18090-:80 \
+            -serial file:qemu_serial_safeboot.log -monitor null 2>/dev/null &
+          QEMU_PID=$!
+          echo "QEMU PID: $QEMU_PID"
+
+          # Wait for the safeboot HTTP server to become reachable (poll /
+          # until any HTTP response is received).
+          echo "Waiting for safeboot HTTP server (up to 90 s)..."
+          TIMEOUT=90; ELAPSED=0; HTTP_UP=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            HTTP_CODE=$(curl -s --max-time 3 -o /dev/null -w "%{http_code}" \
+              "http://localhost:18090/" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" != "000" ]; then
+              HTTP_UP=1
+              echo "Safeboot HTTP responded with code $HTTP_CODE"
+              break
+            fi
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          if [ "$HTTP_UP" -eq 0 ]; then
+            echo "✗ Safeboot HTTP server did not become reachable"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_safeboot.log; exit 1
+          fi
+          echo "✓ Safeboot is reachable"
+          tail -20 qemu_serial_safeboot.log || true
+
+          # Upload the OTA firmware via the safeboot /u endpoint.
+          echo "Uploading tasmota32-qemu.bin via safeboot /u endpoint..."
+          OTA_HTTP=$(curl -s --max-time 180 \
+            -o /tmp/ota_response.html \
+            -w "%{http_code}" \
+            -F "update=@qemu_image/tasmota32-qemu.bin" \
+            "http://localhost:18090/u" || echo "000")
+          echo "OTA upload HTTP code: $OTA_HTTP"
+          cat /tmp/ota_response.html || true; echo ""
+          if [ "$OTA_HTTP" != "200" ]; then
+            echo "✗ Safeboot OTA upload FAILED (HTTP $OTA_HTTP)"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_safeboot.log; exit 1
+          fi
+          echo "✓ OTA firmware uploaded"
+
+          # After the upload the ESP32 reboots automatically.  Detect the
+          # main firmware starting up (new 'Project tasmota' after OTA).
+          LINES_POST_OTA=$(wc -l < qemu_serial_safeboot.log)
+          echo "Waiting for main firmware to boot after OTA..."
+          TIMEOUT=90; ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            tail -n +$((LINES_POST_OTA + 1)) qemu_serial_safeboot.log 2>/dev/null \
+              | grep -q "Project tasmota" && break
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          if ! tail -n +$((LINES_POST_OTA + 1)) qemu_serial_safeboot.log 2>/dev/null \
+               | grep -q "Project tasmota"; then
+            echo "✗ Main firmware did not boot after OTA"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_safeboot.log; exit 1
+          fi
+          echo "✓ Main firmware booted after OTA"
+
+          # Wait for Ethernet in the main firmware.
+          TIMEOUT=60; ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            tail -n +$((LINES_POST_OTA + 1)) qemu_serial_safeboot.log 2>/dev/null \
+              | grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP" && break
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          if ! tail -n +$((LINES_POST_OTA + 1)) qemu_serial_safeboot.log 2>/dev/null \
+               | grep -qE "ETH:.*[Cc]onnected|ETH:.*IPv4|ETH:.*[Gg]ot.IP"; then
+            echo "✗ Ethernet did not come up after OTA reboot"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_safeboot.log; exit 1
+          fi
+          echo "✓ Ethernet up after OTA reboot"
+
+          # Verify main firmware via HTTP Status 0 (safeboot does not have
+          # the full command dispatcher, so a valid JSON 'Status' key
+          # confirms the main firmware is running).
+          sleep 5
+          OTA_STATUS=$(curl -s --max-time 15 \
+            -o /tmp/ota_status.json -w "%{http_code}" \
+            "http://localhost:18090/cm?cmnd=Status%200" || echo "000")
+          echo "HTTP Status 0 code: $OTA_STATUS"
+          cat /tmp/ota_status.json || true; echo ""
+          if [ "$OTA_STATUS" != "200" ] || ! grep -q '"Status"' /tmp/ota_status.json 2>/dev/null; then
+            echo "✗ HTTP Status 0 FAILED after OTA (code=$OTA_STATUS)"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_safeboot.log; exit 1
+          fi
+          echo "✓ Main firmware responding to Status 0 – safeboot OTA test PASSED"
+
+          kill "$QEMU_PID" 2>/dev/null || true
+          echo "--- Last 30 lines of serial log ---"
+          tail -30 qemu_serial_safeboot.log || true
+
       - name: Upload QEMU serial logs
         if: always()
         uses: actions/upload-artifact@v4
