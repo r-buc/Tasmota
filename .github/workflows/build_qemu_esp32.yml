@@ -291,8 +291,8 @@ jobs:
           FAILED=0
 
           for ITER in 1 2; do
-            BOOT_PC=$((2 + ITER * 2))   # boots 4, 6
-            BOOT_SW=$((BOOT_PC + 1))    # boots 5, 7
+            BOOT_PC=$((2 + ITER * 2))   # power-cycle boot numbers: 4, 6
+            BOOT_SW=$((BOOT_PC + 1))    # software-restart boot numbers: 5, 7
             PORT=$((18082 + ITER))      # ports 18083, 18084
             LOG="qemu_serial_${BOOT_PC}.log"
 
@@ -417,11 +417,17 @@ jobs:
           echo "=== Safeboot OTA test ==="
 
           # Create a safeboot-only image by resetting the OTA data to 0xFF.
+          # OTA_DATA_OFFSET: 0xe000  (matches partition table entry for boot_app0)
+          # OTA_DATA_SIZE:   8192    (2 × 4 KB sectors, erased state = 0xFF)
+          # With all bytes 0xFF the ESP-IDF bootloader finds no valid OTA entry
+          # and falls back to the factory partition (tasmota32-qemu-safeboot).
           cp qemu_image/tasmota32-qemu-flash.bin qemu_image/safeboot_test_image.bin
           python3 - <<'PYEOF'
+          OTA_DATA_OFFSET = 0xe000
+          OTA_DATA_SIZE   = 8192
           with open("qemu_image/safeboot_test_image.bin", "r+b") as f:
-              f.seek(0xe000)
-              f.write(b"\xff" * 8192)
+              f.seek(OTA_DATA_OFFSET)
+              f.write(b"\xff" * OTA_DATA_SIZE)
           PYEOF
           echo "Safeboot image ready (OTA data cleared)"
           ls -lh qemu_image/safeboot_test_image.bin
@@ -503,9 +509,9 @@ jobs:
           fi
           echo "✓ Ethernet up after OTA reboot"
 
-          # Verify main firmware via HTTP Status 0 (safeboot does not have
-          # the full command dispatcher, so a valid JSON 'Status' key
-          # confirms the main firmware is running).
+          # Verify main firmware via HTTP Status 0.
+          # Safeboot lacks the full command dispatcher; a valid JSON 'Status'
+          # key in the response confirms the main firmware is running.
           sleep 5
           OTA_STATUS=$(curl -s --max-time 15 \
             -o /tmp/ota_status.json -w "%{http_code}" \
