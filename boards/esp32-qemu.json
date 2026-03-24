@@ -22,7 +22,7 @@
       "flash_extra_images": [
         [
           "0x10000",
-          "tasmota32-safeboot.bin"
+          "tasmota32-qemu-safeboot.bin"
         ]
       ]
     },

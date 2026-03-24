@@ -254,9 +254,6 @@ void EthernetInit(void) {
     Settings->eth_address = 1;                    // EthAddress
     Settings->eth_type = ETH_PHY_LAN8720;         // EthType 0 = LAN8720
     Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
-    eth_type = (Settings->eth_type < sizeof(eth_type_xtable)) ? eth_type_xtable[Settings->eth_type] : 0;
-    eth_uses_spi = (eth_type & ETH_USES_SPI);
-    eth_type = eth_type & 0x7F;
   }
 #endif  // CONFIG_ETH_USE_ESP32_EMAC
 
