@@ -250,11 +250,6 @@ void EthernetInit(void) {
   bool eth_uses_spi = (eth_type & ETH_USES_SPI);
   eth_type = eth_type & 0x7F;     // remove SPI flag
 #if CONFIG_ETH_USE_ESP32_EMAC
-#ifndef FIRMWARE_QEMU
-  // Apply WT32-ETH01 hardware-specific settings.  Skipped for FIRMWARE_QEMU
-  // because the correct ETH_TYPE (DP83848) and ETH_ADDRESS are already set via
-  // user_config_override.h / compiled-in defaults; writing the LAN8720 values
-  // here would corrupt flash and break Ethernet on every subsequent boot.
   if (WT32_ETH01 == TasmotaGlobal.module_type) {
     Settings->eth_address = 1;                    // EthAddress
     Settings->eth_type = ETH_PHY_LAN8720;         // EthType 0 = LAN8720
@@ -263,7 +258,6 @@ void EthernetInit(void) {
     eth_uses_spi = (eth_type & ETH_USES_SPI);
     eth_type = eth_type & 0x7F;
   }
-#endif  // FIRMWARE_QEMU
 #endif  // CONFIG_ETH_USE_ESP32_EMAC
 
   if (eth_uses_spi) {
@@ -302,7 +296,7 @@ void EthernetInit(void) {
 
   bool init_ok = false;
   if (!eth_uses_spi) {
-#if CONFIG_ETH_USE_ESP32_EMAC
+#if CONFIG_ETH_USE_ESP32_EMAC || CONFIG_ETH_USE_OPENETH
 #ifndef FIRMWARE_MINIMAL
     AddLog(LOG_LEVEL_INFO, PSTR(D_LOG_ETH "Ethernet using RMII"));
 #endif // FIRMWARE_MINIMAL
@@ -311,7 +305,7 @@ void EthernetInit(void) {
 #else
     init_ok = (ETH.begin((eth_phy_type_t)eth_type, Settings->eth_address, eth_mdc, eth_mdio, eth_power, (eth_clock_mode_t)Settings->eth_clk_mode));
 #endif //CONFIG_IDF_TARGET_ESP32P4
-#endif  // CONFIG_ETH_USE_ESP32_EMAC
+#endif  // CONFIG_ETH_USE_ESP32_EMAC || CONFIG_ETH_USE_OPENETH
   } else {
 #if CONFIG_SOC_SPI_PERIPH_NUM > 2 
     if ((1 == spi_bus) && (SPI_MOSI_MISO != TasmotaGlobal.spi_enabled2)) {
