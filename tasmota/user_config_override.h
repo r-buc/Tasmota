@@ -14,15 +14,15 @@
 #undef USE_BERRY_PARTITION_WIZARD
 #endif
 
-// QEMU-specific settings: WT32-ETH01 module with DP83848 PHY (emulated by Espressif QEMU)
+// QEMU-specific settings: dedicated ESP32-QEMU module with DP83848 PHY (emulated by Espressif QEMU)
 #ifdef FIRMWARE_QEMU
 #define CODE_IMAGE_STR         "qemu"
 #define USE_ETHERNET                             // Enable Ethernet support
-#define USE_WT32_ETH01                           // Enable WT32-ETH01 support: GPIO18=ETH_MDIO, GPIO23=ETH_MDC
+#define USE_ESP32_QEMU                           // Enable ESP32-QEMU module: GPIO18=ETH_MDIO, GPIO23=ETH_MDC
 #undef MODULE
-#define MODULE                 WT32_ETH01        // [Module] WT32-ETH01 template: GPIO18=MDIO, GPIO23=MDC
+#define MODULE                 ESP32_QEMU        // [Module] ESP32-QEMU: GPIO18=MDIO, GPIO23=MDC
 #undef FALLBACK_MODULE
-#define FALLBACK_MODULE        WT32_ETH01
+#define FALLBACK_MODULE        ESP32_QEMU
 #undef ETH_TYPE
 #define ETH_TYPE               3                 // ETH_PHY_DP83848 - PHY emulated by Espressif QEMU
 #undef ETH_ADDRESS

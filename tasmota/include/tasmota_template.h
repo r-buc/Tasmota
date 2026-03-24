@@ -3502,6 +3502,9 @@ enum SupportedModulesESP32 {
   ODROID_GO,
   ESP32_SOLO,
   WT32_ETH01,
+#ifdef USE_ESP32_QEMU
+  ESP32_QEMU,
+#endif  // USE_ESP32_QEMU
   MAXMODULE };
 
 // Default module settings
@@ -3519,6 +3522,9 @@ const uint8_t kModuleNiceList[] PROGMEM = {
 #ifdef USE_WT32_ETH01
   WT32_ETH01,
 #endif  // USE_WT32_ETH01
+#ifdef USE_ESP32_QEMU
+  ESP32_QEMU,
+#endif  // USE_ESP32_QEMU
 };
 
 // !!! Update this list in the same order as kModuleNiceList !!!
@@ -3536,6 +3542,9 @@ const char kModuleNames[] PROGMEM =
 #ifdef USE_WT32_ETH01
   "WT32-Eth01|"
 #endif  // USE_WT32_ETH01
+#ifdef USE_ESP32_QEMU
+  "ESP32-QEMU|"
+#endif  // USE_ESP32_QEMU
   ;
 
 // !!! Update this list in the same order as SupportedModulesESP32 !!!
@@ -3726,6 +3735,52 @@ const mytmplt kModules[] PROGMEM = {
     0                            // Flag
   },
 #endif  // USE_WT32_ETH01
+
+#ifdef USE_ESP32_QEMU
+  {                              // ESP32_QEMU - Espressif QEMU emulated ESP32 with OpenCores Ethernet MAC (open_eth)
+    0,                           // 0       (I)O                GPIO0, Ethernet EMAC_REF_CLK (ETH_CLOCK_GPIO0_IN)
+    AGPIO(GPIO_USER),            // 1       IO     TXD0         GPIO1, U0TXD
+    AGPIO(GPIO_USER),            // 2       IO                  GPIO2
+    AGPIO(GPIO_USER),            // 3       IO     RXD0         GPIO3, U0RXD
+    AGPIO(GPIO_USER),            // 4       IO                  GPIO4
+    AGPIO(GPIO_USER),            // 5       IO                  GPIO5
+                                 // 6       IO                  Remapped to 28
+                                 // 7       IO                  Remapped to 29
+                                 // 8       IO                  Remapped to 30
+    0,                           // 9       IO                  GPIO9, Flash D2
+    0,                           // 10      IO                  GPIO10, Flash D3
+                                 // 11      IO                  Remapped to 31
+    AGPIO(GPIO_USER),            // 12      (I)O                GPIO12
+    0,                           // 13      IO                  GPIO13, Ethernet EMAC_RX_ER
+    AGPIO(GPIO_USER),            // 14      IO                  GPIO14
+    AGPIO(GPIO_USER),            // 15      (I)O                GPIO15
+    AGPIO(GPIO_OUTPUT_HI),       // 16      IO                  GPIO16, Ethernet OSC_ENA
+    AGPIO(GPIO_LEDLNK_INV),      // 17      IO                  GPIO17, Network link led (green)
+    AGPIO(GPIO_ETH_PHY_MDIO),    // 18      IO                  GPIO18, Ethernet MDIO
+    0,                           // 19      IO                  GPIO19, Ethernet TXD0
+    0,                           // 20
+    0,                           // 21      IO                  GPIO21, Ethernet EMAC_TX_EN
+    0,                           // 22      IO                  GPIO22, Ethernet EMAC_TXD1
+    AGPIO(GPIO_ETH_PHY_MDC),     // 23      IO                  GPIO23, Ethernet MDC
+    0,                           // 24
+    0,                           // 25      IO                  GPIO25, Ethernet EMAC_RXD0
+    0,                           // 26      IO                  GPIO26, Ethernet EMAC_RXD1
+    0,                           // 27      IO                  GPIO27, Ethernet EMAC_RX_DV
+    0,                           // 6       IO                  GPIO6, Flash CLK
+    0,                           // 7       IO                  GPIO7, Flash D0
+    0,                           // 8       IO                  GPIO8, Flash D1
+    0,                           // 11      IO                  GPIO11, Flash CMD
+    AGPIO(GPIO_USER),            // 32      IO                  GPIO32
+    AGPIO(GPIO_USER),            // 33      IO                  GPIO33
+    0,                           // 34      I   NO PULLUP       GPIO34
+    AGPIO(GPIO_USER),            // 35      I   NO PULLUP       GPIO35
+    AGPIO(GPIO_USER),            // 36      I   NO PULLUP       GPIO36
+    0,                           // 37          NO PULLUP
+    0,                           // 38          NO PULLUP
+    AGPIO(GPIO_USER),            // 39      I   NO PULLUP       GPIO39
+    0                            // Flag
+  },
+#endif  // USE_ESP32_QEMU
 
 };
 
