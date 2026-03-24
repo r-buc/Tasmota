@@ -143,10 +143,46 @@ uint8_t eth_config_change;
 // flag redirects ETH.begin()'s internal MAC creation call to
 // __wrap_esp_eth_mac_new_esp32 below, which calls esp_eth_mac_new_openeth()
 // from libesp_eth.a (compiled in via custom_sdkconfig = CONFIG_ETH_USE_OPENETH=y).
+//
+// Additionally, -Wl,--wrap=esp_intr_alloc intercepts every call to
+// esp_intr_alloc() so that the openeth interrupt is NOT allocated with
+// ESP_INTR_FLAG_IRAM.  The ESP-IDF openeth driver requests ESP_INTR_FLAG_IRAM,
+// which allows its ISR to fire even while the flash instruction cache is
+// temporarily disabled (e.g. during a flash-write erase/program cycle).  If
+// the ISR -- or any function it calls -- touches flash-mapped data (e.g. a
+// log-format string literal in .rodata) during that window, the CPU raises a
+// "Cache disabled but cached memory region accessed" panic.
+//
+// Clearing ESP_INTR_FLAG_IRAM for the ethernet MAC interrupt source causes the
+// interrupt controller to defer delivery until the cache is re-enabled, which
+// is always safe and incurs at most one dropped receive notification in QEMU.
 #ifdef FIRMWARE_QEMU
 #include <esp_eth_mac_openeth.h>
+#include <esp_intr_alloc.h>
+
 extern "C" esp_eth_mac_t *__wrap_esp_eth_mac_new_esp32(const void*, const eth_mac_config_t *config) {
   return esp_eth_mac_new_openeth(config);
+}
+
+// ETS_ETH_MAC_INTR_SOURCE is the ESP32 interrupt-matrix source number used by
+// both the internal EMAC and the QEMU openeth emulation.  It is defined in the
+// SoC peripheral headers; provide a fallback value (17 on ESP32) in case the
+// header is not transitively included.
+#ifndef ETS_ETH_MAC_INTR_SOURCE
+#define ETS_ETH_MAC_INTR_SOURCE 17
+#endif
+
+extern "C" esp_err_t __real_esp_intr_alloc(int source, int flags, intr_handler_t handler, void *arg, intr_handle_t *ret_handle);
+extern "C" esp_err_t __wrap_esp_intr_alloc(int source, int flags, intr_handler_t handler, void *arg, intr_handle_t *ret_handle) {
+  // Remove ESP_INTR_FLAG_IRAM from the ethernet MAC interrupt so the openeth
+  // ISR is automatically deferred (not delivered) while the flash cache is
+  // disabled.  This eliminates the "Cache disabled but cached memory region
+  // accessed" panic that occurs when a flash write coincides with an ethernet
+  // receive interrupt in QEMU.
+  if (source == ETS_ETH_MAC_INTR_SOURCE) {
+    flags &= ~ESP_INTR_FLAG_IRAM;
+  }
+  return __real_esp_intr_alloc(source, flags, handler, arg, ret_handle);
 }
 #endif  // FIRMWARE_QEMU
 
