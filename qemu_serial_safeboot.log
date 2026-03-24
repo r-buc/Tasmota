@@ -1,0 +1,60 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x12 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:244
+load:0x40078000,len:13152
+ho 0 tail 12 room 4
+load:0x40080400,len:2892
+entry 0x40080554
+
+00:00:00.011 HDW: ESP32-D0WDQ6 v0.0 
+00:00:00.859 CFG: Loaded from NVS, Count 4
+00:00:00.875 Project tasmota - Tasmota Version 15.3.0(qemu)-3.3.7(2026-03-24T15:36:34)
+00:00:00.876 WARNING This version does not support persistent settings
+00:00:00.020 ETH: Connected at 10Mbps Full Duplex, Mac 00:00:00:00:00:03, Hostname tasmota-000000-0000-eth
+17:13:14.541 HTP: Web server active on tasmota-000000-0000-eth with IP address 10.0.2.15
+17:13:15.754 RSL: INFO1 = {"Info1":{"Module":"ESP32-QEMU","Version":"15.3.0(qemu)","FallbackTopic":"cmnd/DVES_000000_fb/","GroupTopic":"cmnd/tasmotas/"}}
+17:13:15.758 RSL: INFO2 = {"Info2":{"WebServerMode":"Admin","Ethernet":{"Hostname":"tasmota-000000-0000-eth","IPAddress":"10.0.2.15"}}}
+17:13:15.760 RSL: INFO3 = {"Info3":{"RestartReason":"Vbat power on reset","BootCount":2}}
+17:13:17.219 UPL: File tasmota32-qemu.bin (1511472 bytes)
+17:13:39.172 UPL: Successful 1511472 bytes
+ets Jul 29 2019 12:21:46
+
+rst:0x3 (SW_RESET),boot:0x12 (SPI_FAST_FLASH_BOOT)
+ets Jul 29 2019 12:21:46
+
+rst:0x7 (TG0WDT_SYS_RESET),boot:0x12 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:244
+load:0x40078000,len:13152
+ho 0 tail 12 room 4
+load:0x40080400,len:2892
+entry 0x40080554
+
+00:00:00.012 HDW: ESP32-D0WDQ6 v0.0 
+00:00:00.371 UFS: FlashFS mounted with 304 kB free
+00:00:00.898 CFG: Loaded from File, Count 4
+00:00:00.075 QPC: Count 1
+00:00:00.901 BRY: Berry initialized, RAM used 3409 bytes
+00:00:01.076 Project tasmota - Tasmota Version 15.3.0(qemu)-3.3.7(2026-03-24T15:37:55)
+00:00:02.727 ETH: Ethernet using RMII
+00:00:02.875 ETH: Connected at 10Mbps Full Duplex, Mac 00:00:00:00:00:03, Hostname tasmota-000000-0000-eth
+17:13:50.488 HTP: Web server active on tasmota-000000-0000-eth with IP address 10.0.2.15
+17:13:51.529 RSL: INFO1 = {"Info1":{"Module":"ESP32-QEMU","Version":"15.3.0(qemu)","FallbackTopic":"cmnd/DVES_000000_fb/","GroupTopic":"cmnd/tasmotas/"}}
+17:13:51.532 RSL: INFO2 = {"Info2":{"WebServerMode":"Admin","Ethernet":{"Hostname":"tasmota-000000-0000-eth","IPAddress":"10.0.2.15"}}}
+17:13:51.534 RSL: INFO3 = {"Info3":{"RestartReason":"Timer Group0 Watch dog reset digital core","BootCount":2}}
+17:13:52.663 RSL: STATUS = {"Status":{"Module":6,"DeviceName":"Tasmota","FriendlyName":["Tasmota"],"Topic":"tasmota_000000","ButtonTopic":"0","Power":"0","PowerLock":"0","PowerOnState":3,"LedState":1,"LedMask":"FFFF","SaveData":1,"SaveState":1,"SwitchTopic":"0","SwitchMode":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"ButtonRetain":0,"SwitchRetain":0,"SensorRetain":0,"PowerRetain":0,"InfoRetain":0,"StateRetain":0,"StatusRetain":0}}
+17:13:52.671 RSL: STATUS1 = {"StatusPRM":{"Baudrate":115200,"SerialConfig":"8N1","GroupTopic":"tasmotas","OtaUrl":" ","RestartReason":"Timer Group0 Watch dog reset digital core","Uptime":"0T00:00:05","StartupUTC":"2026-03-24T16:13:47","Sleep":50,"CfgHolder":4617,"BootCount":1,"BCResetTime":"2026-03-24T16:42:28","SaveCount":4}}
+17:13:52.674 RSL: STATUS2 = {"StatusFWR":{"Version":"15.3.0(qemu)","BuildDateTime":"2026-03-24T15:37:55","Core":"3.3.7","SDK":"5.3.4.260127","CpuFrequency":160,"Hardware":"ESP32-D0WDQ6 v0.0","CR":"329/699"}}
+17:13:52.677 RSL: STATUS3 = {"StatusLOG":{"SerialLog":2,"WebLog":2,"MqttLog":0,"FileLog":0,"SysLog":0,"LogHost":"","LogPort":514,"SSId":["",""],"TelePeriod":300,"Resolution":"558180C0","SetOption":["00008009","2805C80001000600003C5A0A192800000000","00000080","00004000","00004000","00000000"]}}
+17:13:53.004 RSL: STATUS4 = {"StatusMEM":{"ProgramSize":1476,"Free":1403,"Heap":183,"StackLowMark":3,"PsrMax":0,"PsrFree":0,"ProgramFlashSize":4096,"FlashSize":4096,"FlashChipId":"1640C8","FlashFrequency":80,"FlashMode":"DIO","Features":["0809","8F9AC7CF","00148001","000000CF","010013C0","C0000981","40004080","00200000","5400002C","00000080","00000004"],"Drivers":"1,2,!3,!4,!5,7,!8,9,10,12,!16,!20,!21,!24,26,!27,29,!35,38,50,52,62,!68,82,!121","Sensors":"1,2,3,5,6,127","I2CDriver":"7"}}
+17:13:53.029 RSL: STATUS5 = {"StatusNET":{"Hostname":"tasmota-000000-0000","IPAddress":"0.0.0.0","Gateway":"192.168.1.1","Subnetmask":"255.255.255.0","DNSServer1":"10.0.2.3","DNSServer2":"0.0.0.0","Mac":"00:00:00:00:00:00","IP6Global":"","IP6Local":"","Ethernet":{"Hostname":"tasmota-000000-0000-eth","IPAddress":"10.0.2.15","Gateway":"10.0.2.2","Subnetmask":"255.255.255.0","DNSServer1":"10.0.2.3","DNSServer2":"0.0.0.0","Mac":"00:00:00:00:00:03","IP6Global":"fec0::200:ff:fe00:3","IP6Local":"fe80::200:ff:fe00:3%en1"},"Webserver":2,"HTTP_API":1,"WifiConfig":4,"WifiPower":16.0}}
+17:13:53.041 RSL: STATUS6 = {"StatusMQT":{"MqttHost":"","MqttPort":1883,"MqttClientMask":"DVES_%06X","MqttClient":"DVES_000000","MqttUser":"DVES_USER","MqttCount":0,"MqttTLS":0,"MAX_PACKET_SIZE":1200,"KEEPALIVE":30,"SOCKET_TIMEOUT":4}}
+17:13:53.045 RSL: STATUS7 = {"StatusTIM":{"UTC":"2026-03-24T16:13:53Z","Local":"2026-03-24T17:13:53","StartDST":"2026-03-29T02:00:00","EndDST":"2026-10-25T03:00:00","Timezone":"+01:00","Sunrise":"06:44","Sunset":"19:08"}}
+17:13:53.051 RSL: STATUS10 = {"StatusSNS":{"Time":"2026-03-24T17:13:53"}}
+17:13:53.055 RSL: STATUS11 = {"StatusSTS":{"Time":"2026-03-24T17:13:53","Uptime":"0T00:00:06","UptimeSec":6,"Heap":184,"SleepMode":"Dynamic","Sleep":50,"LoadAvg":56,"MqttCount":0,"Berry":{"HeapUsed":3,"Objects":42},"Hostname":"tasmota-000000-0000-eth","IPAddress":"10.0.2.15"}}

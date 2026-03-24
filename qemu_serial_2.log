@@ -1,0 +1,20 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x12 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:244
+load:0x40078000,len:13152
+ho 0 tail 12 room 4
+load:0x40080400,len:2892
+entry 0x40080554
+
+00:00:00.012 HDW: ESP32-D0WDQ6 v0.0 
+00:00:00.152 UFS: FlashFS mounted with 304 kB free
+00:00:00.568 CFG: Loaded from File, Count 3
+00:00:00.734 QPC: Count 1
+00:00:00.715 BRY: Berry initialized, RAM used 4606 bytes
+00:00:01.158 Project tasmota - Tasmota Version 15.3.0(qemu)-3.3.7(2026-03-24T15:37:55)
+00:00:02.172 ETH: Ethernet using RMII
+00:00:02.317 ETH: Connected at 10Mbps Full Duplex, Mac 00:00:00:00:00:03, Hostname tasmota-000000-0000-eth

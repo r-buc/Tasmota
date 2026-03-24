@@ -442,14 +442,27 @@ jobs:
           QEMU_PID=$!
           echo "QEMU PID: $QEMU_PID"
 
-          # Wait for the safeboot HTTP server to become reachable (poll /
-          # until any HTTP response is received).
-          echo "Waiting for safeboot HTTP server (up to 90 s)..."
-          TIMEOUT=90; ELAPSED=0; HTTP_UP=0
+          # Wait for the safeboot HTTP server to become reachable.
+          # First wait for the serial log to confirm the web server is active,
+          # then poll HTTP until a non-000 response is received.
+          echo "Waiting for safeboot web server in serial log (up to 120 s)..."
+          TIMEOUT=120; ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            grep -q "HTP:" qemu_serial_safeboot.log 2>/dev/null && break
+            sleep 2; ELAPSED=$((ELAPSED + 2))
+          done
+          if ! grep -q "HTP:" qemu_serial_safeboot.log 2>/dev/null; then
+            echo "✗ Safeboot web server never appeared in serial log"
+            kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_safeboot.log; exit 1
+          fi
+          echo "Safeboot web server line seen in serial log"
+
+          echo "Waiting for safeboot HTTP server (up to 60 s)..."
+          TIMEOUT=60; ELAPSED=0; HTTP_UP=0
           while [ $ELAPSED -lt $TIMEOUT ]; do
             HTTP_CODE=$(curl -s --max-time 3 -o /dev/null -w "%{http_code}" \
-              "http://localhost:18090/" 2>/dev/null || echo "000")
-            if [ "$HTTP_CODE" != "000" ]; then
+              "http://localhost:18090/" 2>/dev/null)
+            if [ "$HTTP_CODE" != "000" ] && [ -n "$HTTP_CODE" ]; then
               HTTP_UP=1
               echo "Safeboot HTTP responded with code $HTTP_CODE"
               break
@@ -463,17 +476,26 @@ jobs:
           echo "✓ Safeboot is reachable"
           tail -20 qemu_serial_safeboot.log || true
 
-          # Upload the OTA firmware via the safeboot /u endpoint.
-          echo "Uploading tasmota32-qemu.bin via safeboot /u endpoint..."
-          OTA_HTTP=$(curl -s --max-time 180 \
+          # Upload the OTA firmware via the safeboot web interface.
+          # The correct sequence mirrors the browser: GET /up first (sets
+          # upload_file_type = UPL_TASMOTA in the web server), then POST
+          # the firmware binary to /u2 with the correct field name 'u2'
+          # and the file size as the ?fsz= query parameter.
+          echo "Initialising upload type (GET /up)..."
+          curl -s --max-time 10 "http://localhost:18090/up" > /dev/null
+          echo "Uploading tasmota32-qemu.bin to /u2..."
+          OTA_FILESIZE=$(stat -c%s qemu_image/tasmota32-qemu.bin)
+          OTA_HTTP=$(curl -s --max-time 300 \
             -o /tmp/ota_response.html \
             -w "%{http_code}" \
-            -F "update=@qemu_image/tasmota32-qemu.bin" \
-            "http://localhost:18090/u" || echo "000")
+            -F "u2=@qemu_image/tasmota32-qemu.bin" \
+            "http://localhost:18090/u2?fsz=${OTA_FILESIZE}" || echo "000")
           echo "OTA upload HTTP code: $OTA_HTTP"
-          cat /tmp/ota_response.html || true; echo ""
-          if [ "$OTA_HTTP" != "200" ]; then
+          grep -oE "Successful|Failed|Not enough|Invalid" /tmp/ota_response.html || true; echo ""
+          # HTTP 200 alone is not enough — the response page says "Successful" or "Failed".
+          if [ "$OTA_HTTP" != "200" ] || ! grep -q "Successful" /tmp/ota_response.html 2>/dev/null; then
             echo "✗ Safeboot OTA upload FAILED (HTTP $OTA_HTTP)"
+            cat /tmp/ota_response.html || true; echo ""
             kill "$QEMU_PID" 2>/dev/null || true; cat qemu_serial_safeboot.log; exit 1
           fi
           echo "✓ OTA firmware uploaded"
