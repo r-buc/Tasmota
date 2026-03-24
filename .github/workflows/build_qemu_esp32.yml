@@ -491,7 +491,7 @@ jobs:
             -F "u2=@qemu_image/tasmota32-qemu.bin" \
             "http://localhost:18090/u2?fsz=${OTA_FILESIZE}" || echo "000")
           echo "OTA upload HTTP code: $OTA_HTTP"
-          grep -oE "Successful|Failed|Not enough|Invalid" /tmp/ota_response.html || true; echo ""
+          grep -oE "Upload (Successful|Failed)|Not enough space|Invalid file" /tmp/ota_response.html || true; echo ""
           # HTTP 200 alone is not enough — the response page says "Successful" or "Failed".
           if [ "$OTA_HTTP" != "200" ] || ! grep -q "Successful" /tmp/ota_response.html 2>/dev/null; then
             echo "✗ Safeboot OTA upload FAILED (HTTP $OTA_HTTP)"
