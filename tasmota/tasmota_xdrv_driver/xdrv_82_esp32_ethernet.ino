@@ -251,21 +251,16 @@ void EthernetInit(void) {
   eth_type = eth_type & 0x7F;     // remove SPI flag
 #if CONFIG_ETH_USE_ESP32_EMAC
   if (WT32_ETH01 == TasmotaGlobal.module_type) {
+#ifndef FIRMWARE_QEMU
     Settings->eth_address = 1;                    // EthAddress
     Settings->eth_type = ETH_PHY_LAN8720;         // EthType 0 = LAN8720
+#else
+    Settings->eth_address = ETH_ADDRESS;          // PHY address 1
+    Settings->eth_type = ETH_TYPE;                // ETH_PHY_DP83848 for QEMU
+#endif  // FIRMWARE_QEMU
     Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
   }
 #endif  // CONFIG_ETH_USE_ESP32_EMAC
-#ifdef FIRMWARE_QEMU
-  // Always restore the compiled-in ETH settings for QEMU so that a stale
-  // LAN8720 value (written to flash by the WT32-ETH01 override above on a
-  // previous boot) does not prevent Ethernet from connecting.
-  Settings->eth_type    = ETH_TYPE;       // ETH_PHY_DP83848 for QEMU
-  Settings->eth_address = ETH_ADDRESS;    // PHY address 1
-  eth_type = (Settings->eth_type < sizeof(eth_type_xtable)) ? eth_type_xtable[Settings->eth_type] : 0;
-  eth_uses_spi = (eth_type & ETH_USES_SPI);
-  eth_type = eth_type & 0x7F;
-#endif  // FIRMWARE_QEMU
 
   if (eth_uses_spi) {
     // Uses SPI Ethernet and needs at least SPI CS being ETH MDC
