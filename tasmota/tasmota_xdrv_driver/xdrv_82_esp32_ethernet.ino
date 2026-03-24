@@ -255,6 +255,16 @@ void EthernetInit(void) {
     Settings->eth_type = ETH_PHY_LAN8720;         // EthType 0 = LAN8720
     Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
   }
+#ifdef USE_ESP32_QEMU
+  if (ESP32_QEMU == TasmotaGlobal.module_type) {
+    Settings->eth_address = ETH_ADDRESS;          // EthAddress 1 (PHY address used by QEMU)
+    Settings->eth_type = ETH_TYPE;                // EthType 3 = ETH_PHY_DP83848 (PHY emulated by QEMU)
+    Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
+    eth_type = (Settings->eth_type < sizeof(eth_type_xtable)) ? eth_type_xtable[Settings->eth_type] : 0;
+    eth_uses_spi = (eth_type & ETH_USES_SPI);
+    eth_type = eth_type & 0x7F;
+  }
+#endif  // USE_ESP32_QEMU
 #endif  // CONFIG_ETH_USE_ESP32_EMAC
 
   if (eth_uses_spi) {
