@@ -256,6 +256,16 @@ void EthernetInit(void) {
     Settings->eth_clk_mode = 0;                   // EthClockMode 0 = ETH_CLOCK_GPIO0_IN
   }
 #endif  // CONFIG_ETH_USE_ESP32_EMAC
+#ifdef FIRMWARE_QEMU
+  // Always restore the compiled-in ETH settings for QEMU so that a stale
+  // LAN8720 value (written to flash by the WT32-ETH01 override above on a
+  // previous boot) does not prevent Ethernet from connecting.
+  Settings->eth_type    = ETH_TYPE;       // ETH_PHY_DP83848 for QEMU
+  Settings->eth_address = ETH_ADDRESS;    // PHY address 1
+  eth_type = (Settings->eth_type < sizeof(eth_type_xtable)) ? eth_type_xtable[Settings->eth_type] : 0;
+  eth_uses_spi = (eth_type & ETH_USES_SPI);
+  eth_type = eth_type & 0x7F;
+#endif  // FIRMWARE_QEMU
 
   if (eth_uses_spi) {
     // Uses SPI Ethernet and needs at least SPI CS being ETH MDC
@@ -293,7 +303,7 @@ void EthernetInit(void) {
 
   bool init_ok = false;
   if (!eth_uses_spi) {
-#if CONFIG_ETH_USE_ESP32_EMAC || CONFIG_ETH_USE_OPENETH
+#if CONFIG_ETH_USE_ESP32_EMAC
 #ifndef FIRMWARE_MINIMAL
     AddLog(LOG_LEVEL_INFO, PSTR(D_LOG_ETH "Ethernet using RMII"));
 #endif // FIRMWARE_MINIMAL
@@ -302,7 +312,7 @@ void EthernetInit(void) {
 #else
     init_ok = (ETH.begin((eth_phy_type_t)eth_type, Settings->eth_address, eth_mdc, eth_mdio, eth_power, (eth_clock_mode_t)Settings->eth_clk_mode));
 #endif //CONFIG_IDF_TARGET_ESP32P4
-#endif  // CONFIG_ETH_USE_ESP32_EMAC || CONFIG_ETH_USE_OPENETH
+#endif  // CONFIG_ETH_USE_ESP32_EMAC
   } else {
 #if CONFIG_SOC_SPI_PERIPH_NUM > 2 
     if ((1 == spi_bus) && (SPI_MOSI_MISO != TasmotaGlobal.spi_enabled2)) {

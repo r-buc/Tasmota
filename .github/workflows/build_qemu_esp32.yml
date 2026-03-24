@@ -65,7 +65,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: '1'
-        run: platformio run -e tasmota32-safeboot
+        run: platformio run -e tasmota32-qemu-safeboot
       - name: Move safeboot files into place
         run: |
           mkdir -p ./firmware/firmware
