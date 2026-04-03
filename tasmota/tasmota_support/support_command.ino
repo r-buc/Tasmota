@@ -1053,10 +1053,16 @@ void CmndStatus(void)
     // causes uxTaskGetStackHighWaterMark() to only account for stack depth since this reset.
     {
       register uint8_t *sp asm("a1");
-      uint8_t *stack_start = (uint8_t *)pxTaskGetStackStart(NULL);
-      // Leave 256-byte safety margin: covers Xtensa window-save frames from concurrent ISRs
-      if (sp - 256 > stack_start) {
-        memset(stack_start, 0xa5, sp - 256 - stack_start);
+      // Skip the first 64 bytes: ESP32 FreeRTOS places a hardware write watchpoint on the
+      // canary region at the bottom of the stack (vPortSetStackWatchpoint, 32-byte aligned).
+      // Writing to that region — even with the same 0xa5 fill byte — triggers the watchpoint
+      // and causes a "Stack canary watchpoint triggered" panic.  Those bytes are initialised
+      // to 0xa5 at task creation and never touched by normal execution, so uxTaskGetStack-
+      // HighWaterMark will always count them as unused; skipping them here is safe.
+      uint8_t *fill_start = (uint8_t *)pxTaskGetStackStart(NULL) + 64;
+      // Leave 256-byte safety margin below the current SP for Xtensa window-save ISR frames.
+      if (sp - 256 > fill_start) {
+        memset(fill_start, 0xa5, sp - 256 - fill_start);
       }
     }
 #endif  // ESP32
