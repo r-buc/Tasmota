@@ -1046,6 +1046,20 @@ void CmndStatus(void)
 #endif
     ResponseJsonEndEnd();
     CmndStatusResponse(4);
+#ifdef ESP32
+    // Reset the FreeRTOS stack high water mark so the next Status 4 call reports the
+    // local (since last call) maximum stack usage instead of the global (since boot) one.
+    // Re-filling the stack region below the current SP with the FreeRTOS fill byte (0xa5)
+    // causes uxTaskGetStackHighWaterMark() to only account for stack depth since this reset.
+    {
+      register uint8_t *sp asm("a1");
+      uint8_t *stack_start = (uint8_t *)pxTaskGetStackStart(NULL);
+      // Leave 256-byte safety margin: covers Xtensa window-save frames from concurrent ISRs
+      if (sp - 256 > stack_start) {
+        memset(stack_start, 0xa5, sp - 256 - stack_start);
+      }
+    }
+#endif  // ESP32
   }
 
   // Status 5 - StatusNET
