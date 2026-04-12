@@ -1372,6 +1372,8 @@ dBBBBBP     dBP     dBBBBb    dBBBBb     dBBBP      dBBBP     dBBBBb   dBBBBBb  
 
 //#define USE_COUNTER                              // Enable counters
 //#define USE_ADC_VCC                              // Display Vcc in Power status. Not needed for a Zigbee bridge
+#undef USE_ADC                                   // No ADC pins in default Zigbee bridge template
+#undef USE_IMPROV                                // IMPROV serial provisioning irrelevant for a pre-configured bridge (+2k)
 
 // #define USE_DS18x20                              // Add support for DS18x20 sensors with id sort, single scan and read retry (+2k6 code)
 //  #define W1_PARASITE_POWER                      // Optimize for parasite powered sensors
