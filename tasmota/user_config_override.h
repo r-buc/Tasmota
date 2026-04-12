@@ -1097,7 +1097,7 @@ d'""""""d888' `888'  d8P'  `Y8b   `888'   `Y8b `888'     `8 `888'     `8
 //#define USE_LIGHT                                    // LIGHTS support
 
 //#define USE_COUNTER                              // Enable counters
-#define USE_ADC_VCC                              // Display Vcc in Power status. Disable for use as Analog input on selected devices
+//#define USE_ADC_VCC                              // Display Vcc in Power status. Disable for use as Analog input on selected devices
 
 // #define USE_DS18x20                              // Add support for DS18x20 sensors with id sort, single scan and read retry (+2k6 code)
 //  #define W1_PARASITE_POWER                      // Optimize for parasite powered sensors
@@ -1321,14 +1321,15 @@ dBBBBBP     dBP     dBBBBb    dBBBBb     dBBBP      dBBBP     dBBBBb   dBBBBBb  
 //  #define USE_EMULATION_WEMO                     // Enable Belkin WeMo emulation for Alexa (+6k code, +2k mem)
 //  #define USE_SENDMAIL
 
-#define USE_TIMERS                               // Add support for up to 16 timers (+2k2 code)
-  #define USE_TIMERS_WEB                         // Add timer webpage support (+4k5 code)
-  #define USE_SUNRISE                            // Add support for Sunrise and sunset tools (+16k)
+// Use Berry instead of Rules and Timers to save memory
+//#define USE_TIMERS                               // Add support for up to 16 timers (+2k2 code) - replaced by Berry
+//  #define USE_TIMERS_WEB                         // Add timer webpage support (+4k5 code)
+//  #define USE_SUNRISE                            // Add support for Sunrise and sunset tools (+16k)
 
 // -- Compression ---------------------------------
-#define USE_UNISHOX_COMPRESSION                  // Add support for string compression in Rules or Scripts
+//#define USE_UNISHOX_COMPRESSION                  // Add support for string compression in Rules or Scripts - not needed without Rules
 
-#define USE_RULES                                // Add support for rules (+4k4 code)
+//#define USE_RULES                                // Add support for rules (+4k4 code) - replaced by Berry
 //  #define USE_EXPRESSION                         // Add support for expression evaluation in rules (+3k2 code, +64 bytes mem)
 //    #define SUPPORT_IF_STATEMENT                 // Add support for IF statement in rules (+4k2 code, -332 bytes mem)
 //  #define SUPPORT_MQTT_EVENT                     // Support trigger event with MQTT subscriptions (+3k5 code)
@@ -1370,7 +1371,7 @@ dBBBBBP     dBP     dBBBBb    dBBBBb     dBBBP      dBBBP     dBBBBb   dBBBBBb  
 //#define USE_LIGHT                                    // LIGHTS support
 
 //#define USE_COUNTER                              // Enable counters
-#define USE_ADC_VCC                              // Display Vcc in Power status. Disable for use as Analog input on selected devices
+//#define USE_ADC_VCC                              // Display Vcc in Power status. Not needed for a Zigbee bridge
 
 // #define USE_DS18x20                              // Add support for DS18x20 sensors with id sort, single scan and read retry (+2k6 code)
 //  #define W1_PARASITE_POWER                      // Optimize for parasite powered sensors
