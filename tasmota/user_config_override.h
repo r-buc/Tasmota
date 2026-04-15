@@ -19,6 +19,13 @@
 #define CODE_IMAGE_STR         "qemu"
 #define USE_ETHERNET                             // Enable Ethernet support
 #define USE_ESP32_QEMU                           // Enable ESP32-QEMU module: GPIO18=ETH_MDIO, GPIO23=ETH_MDC
+#define USE_TIMERS                               // Keep timer support in the QEMU image
+  #define USE_TIMERS_WEB                         // Keep the timer web UI in the QEMU image
+#define USE_RULES                                // Keep rules support in the QEMU image
+  #define USE_RULES_COMPRESSION                  // Keep compressed rule storage in the QEMU image
+  #define USE_EXPRESSION                         // Keep expression support in QEMU rules
+    #define SUPPORT_IF_STATEMENT                 // Keep IF support in QEMU rules
+  #define SUPPORT_MQTT_EVENT                     // Keep MQTT-triggered rules in the QEMU image
 #undef MODULE
 #define MODULE                 ESP32_QEMU        // [Module] ESP32-QEMU: GPIO18=MDIO, GPIO23=MDC
 #undef FALLBACK_MODULE
