@@ -3,7 +3,9 @@ name: Build_firmware_master
 on:
   workflow_dispatch:      # Start a workflow
   push:
-    branches: master
+    branches:
+      - master
+      - qemu-squash
     paths-ignore:
     - '.github/**'        # Ignore changes towards the .github directory
     - '**.md'             # Do no build if *.md files changes
@@ -23,11 +25,11 @@ jobs:
       matrix:
         variant:
           - tasmota32-safeboot
-          - tasmota32s3-safeboot          
+          - tasmota32s3-safeboot
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: master
+          ref: ${{ github.ref }}
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -75,7 +77,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: master
+          ref: ${{ github.ref }}
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -112,11 +114,11 @@ jobs:
       matrix:
         variant:
           - tasmota32-zigbeebridge
-          - tasmota32s3-qio_opi-bluetooth          
+          - tasmota32s3-qio_opi-bluetooth
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: master
+          ref: ${{ github.ref }}
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
