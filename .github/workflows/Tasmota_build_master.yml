@@ -23,6 +23,7 @@ jobs:
       matrix:
         variant:
           - tasmota32-safeboot
+          - tasmota32s3-safeboot          
     steps:
       - uses: actions/checkout@v6
         with:
@@ -111,6 +112,7 @@ jobs:
       matrix:
         variant:
           - tasmota32-zigbeebridge
+          - tasmota32s3-qio_opi-bluetooth          
     steps:
       - uses: actions/checkout@v6
         with:
